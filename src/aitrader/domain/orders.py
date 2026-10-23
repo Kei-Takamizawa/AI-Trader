@@ -1,10 +1,12 @@
 """Order intents produced by strategies and the risk engine's decisions about them."""
 
-from typing import Self
+from decimal import Decimal
+from typing import Any, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from aitrader.domain.enums import Side, Verdict
+from aitrader.domain.enums import IntentPurpose, Side, Verdict
+from aitrader.domain.errors import DomainError
 from aitrader.domain.market import Symbol
 from aitrader.domain.money import Currency, Money
 from aitrader.domain.types import NonNegativeDecimal, PositiveDecimal, UtcDatetime
@@ -15,6 +17,7 @@ class OrderIntent(BaseModel):
 
     Exactly one sizing basis is given: ``target_notional`` (amount of money) or
     ``target_quantity`` (number of shares). Entries (BUY) must carry a stop price.
+    ``purpose`` defaults to ENTRY for a BUY and EXIT for a SELL.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -24,6 +27,7 @@ class OrderIntent(BaseModel):
     strategy_version: str = Field(min_length=1)
     symbol: Symbol
     side: Side
+    purpose: IntentPurpose
     target_notional: Money | None = None
     target_quantity: PositiveDecimal | None = None
     limit_price: PositiveDecimal | None = None
@@ -32,8 +36,21 @@ class OrderIntent(BaseModel):
     signal_ts: UtcDatetime
     advisory_ids: tuple[str, ...] = ()
 
+    @model_validator(mode="before")
+    @classmethod
+    def _default_purpose(cls, data: Any) -> Any:
+        if isinstance(data, dict) and data.get("purpose") is None:
+            side = data.get("side")
+            data = {
+                **data,
+                "purpose": IntentPurpose.ENTRY if side in (Side.BUY, "BUY") else IntentPurpose.EXIT,
+            }
+        return data
+
     @model_validator(mode="after")
     def _check(self) -> Self:
+        if (self.purpose is IntentPurpose.ENTRY) != (self.side is Side.BUY):
+            raise ValueError("ENTRY intents are BUYs and every other purpose is a SELL")
         if (self.target_notional is None) == (self.target_quantity is None):
             raise ValueError("give exactly one of target_notional and target_quantity")
         if self.target_notional is not None:
@@ -47,6 +64,16 @@ class OrderIntent(BaseModel):
             if self.limit_price is not None and self.stop_price >= self.limit_price:
                 raise ValueError("stop price of a BUY must be below its limit price")
         return self
+
+    def quantity_at(self, price: Decimal) -> Decimal:
+        """Requested quantity: ``target_quantity``, or ``target_notional`` divided by ``price``."""
+        if self.target_quantity is not None:
+            return self.target_quantity
+        if self.target_notional is None:
+            raise DomainError("intent has neither target_quantity nor target_notional")
+        if price <= 0:
+            raise DomainError("price must be greater than zero")
+        return self.target_notional.amount / price
 
 
 class RuleResult(BaseModel):

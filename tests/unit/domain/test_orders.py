@@ -6,6 +6,8 @@ from pydantic import ValidationError
 
 from aitrader.domain import (
     Currency,
+    DomainError,
+    IntentPurpose,
     Money,
     OrderIntent,
     OrderStatus,
@@ -126,3 +128,47 @@ def test_terminal_order_statuses() -> None:
     assert OrderStatus.NOT_FOUND.is_terminal
     assert not OrderStatus.UNKNOWN.is_terminal
     assert not OrderStatus.PARTIALLY_FILLED.is_terminal
+
+
+def test_quantity_at_uses_the_sizing_basis() -> None:
+    assert _intent().quantity_at(Decimal(100)) == Decimal("0.37")
+    by_quantity = _intent(target_notional=None, target_quantity="2")
+    assert by_quantity.quantity_at(Decimal(100)) == 2
+
+
+def test_quantity_at_refuses_invalid_input() -> None:
+    with pytest.raises(DomainError, match="price"):
+        _intent().quantity_at(Decimal(0))
+    unchecked = _intent().model_copy(update={"target_notional": None})
+    with pytest.raises(DomainError, match="neither"):
+        unchecked.quantity_at(Decimal(100))
+
+
+@pytest.mark.parametrize(
+    ("side", "purpose"),
+    [(Side.BUY, IntentPurpose.ENTRY), (Side.SELL, IntentPurpose.EXIT)],
+)
+def test_purpose_defaults_from_the_side(side: Side, purpose: IntentPurpose) -> None:
+    fields: dict[str, object] = {"side": side}
+    if side is Side.SELL:
+        fields.update(stop_price=None, limit_price=None)
+    assert _intent(**fields).purpose is purpose
+
+
+@pytest.mark.parametrize(
+    ("side", "purpose"),
+    [
+        (Side.BUY, IntentPurpose.EXIT),
+        (Side.BUY, IntentPurpose.FLATTEN),
+        (Side.SELL, IntentPurpose.ENTRY),
+    ],
+)
+def test_entries_are_buys_and_exits_are_sells(side: Side, purpose: IntentPurpose) -> None:
+    with pytest.raises(ValidationError, match="ENTRY intents are BUYs"):
+        _intent(side=side, purpose=purpose, stop_price=None, limit_price=None)
+
+
+def test_stop_exit_and_flatten_are_sells() -> None:
+    for purpose in (IntentPurpose.STOP_EXIT, IntentPurpose.FLATTEN):
+        intent = _intent(side=Side.SELL, purpose=purpose, stop_price=None, limit_price=None)
+        assert intent.purpose is purpose

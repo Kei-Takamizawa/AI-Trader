@@ -33,6 +33,17 @@ class Side(StrEnum):
     SELL = "SELL"
 
 
+class IntentPurpose(StrEnum):
+    """Why an intent exists. Entries are BUYs; everything else is a SELL that reduces risk."""
+
+    ENTRY = "ENTRY"
+    EXIT = "EXIT"
+    STOP_EXIT = "STOP_EXIT"
+    """Exit triggered by a protective stop (broker-side or system-side)."""
+    FLATTEN = "FLATTEN"
+    """Exit ordered by the kill switch's explicit flatten command."""
+
+
 class OrderType(StrEnum):
     MARKET = "MARKET"
     LIMIT = "LIMIT"

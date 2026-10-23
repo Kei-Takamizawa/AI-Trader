@@ -23,6 +23,7 @@ AI-Trader/
 │   ├── news/                   # News/filings/macro ports and adapters
 │   ├── ai/                     # AI analysis service, LLM port, prompt templates, output store
 │   ├── strategy/               # Strategy interface and implementations
+│   ├── fees/                   # Broker fee schedules and round-trip cost model (pure)
 │   ├── risk/                   # Risk engine, sizing, limits, circuit breakers, halt state
 │   ├── execution/              # Order manager, order state machine, order gate
 │   ├── broker/                 # Broker port and adapters
@@ -61,6 +62,7 @@ AI-Trader/
 | `news` | `NewsSource`, `FilingSource`, `MacroSource` ports; normalisation with `published_at`, `retrieved_at`, source and hash. | Pass raw HTML to the AI service without sanitising. |
 | `ai` | Build the sanitised **input bundle** and publish it to the data repository; fetch, schema-validate and store the **advisory file** written by the Claude Code scheduled task; keep the prompt templates and schemas (versioned, `ai/prompts/`, `ai/schemas/`); replay stored advisories in backtests; optional pay-as-you-go API client (fallback mode, only after approval) with the USD 10/month cap. | Import `execution`, `broker` or `risk`. Put account data, positions or credentials into the bundle. Hold any credential except the data-repository token (and the API key in fallback mode). |
 | `strategy` | Pure functions: given bars, portfolio snapshot and valid advisory signals, return `OrderIntent`s with reasons. Versioned parameters. | Perform I/O, read the clock directly, or import `ai`. |
+| `fees` | Broker fee schedules (`WEBULL_JP`: CAT, FINRA TAF, SEC fee, FX spread, fractional minimums) and execution-cost assumptions; per-order fees and round-trip cost estimates, with a conservative monotonic bound for sizing. Shared by `risk`, `backtest` and the broker cost profiles so every mode uses one cost model. | Import anything but `domain`. Perform I/O. |
 | `risk` | Pre-trade checks, position sizing with fees, portfolio limits, loss limits, circuit breakers, halt state machine. | Import `ai`. Depend on anything non-deterministic. |
 | `execution` | Order manager (idempotent submission, state machine, write-ahead records, cancel/replace, protective stops); `OrderGate` (final hard-cap check). | Import `ai`. Submit without an approved `RiskDecision`. |
 | `broker` | `BrokerPort` and adapters (`sim`, `webull`); environment allow-lists (endpoints, account IDs); translate broker payloads and errors to domain types; broker cost profiles; a broker-agnostic contract test suite. | Import `ai`. Contain strategy logic. Leak SDK types outside the adapter. |
@@ -79,8 +81,9 @@ AI-Trader/
 ```
 domain        <- everything may import domain
 config, clock <- may import domain
+fees          -> domain only
 strategy      -> domain only
-risk          -> domain, config
+risk          -> domain, config, fees
 portfolio     -> domain
 execution     -> domain, risk (types only), portfolio, broker (port only)
 broker        -> domain, config

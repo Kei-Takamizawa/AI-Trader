@@ -122,6 +122,7 @@ forbidden_modules = [
     "aitrader.config",
     "aitrader.data",
     "aitrader.execution",
+    "aitrader.fees",
     "aitrader.metrics",
     "aitrader.news",
     "aitrader.notify",
@@ -145,6 +146,7 @@ source_modules = [
     "aitrader.data",
     "aitrader.domain",
     "aitrader.execution",
+    "aitrader.fees",
     "aitrader.metrics",
     "aitrader.news",
     "aitrader.notify",
@@ -162,6 +164,32 @@ allow_indirect_imports = true
 name = "The domain package depends on nothing else in aitrader"
 type = "forbidden"
 source_modules = ["aitrader.domain"]
+forbidden_modules = [
+    "aitrader.ai",
+    "aitrader.app",
+    "aitrader.backtest",
+    "aitrader.broker",
+    "aitrader.cli",
+    "aitrader.clock",
+    "aitrader.config",
+    "aitrader.data",
+    "aitrader.execution",
+    "aitrader.fees",
+    "aitrader.metrics",
+    "aitrader.news",
+    "aitrader.notify",
+    "aitrader.ops",
+    "aitrader.portfolio",
+    "aitrader.reconcile",
+    "aitrader.risk",
+    "aitrader.storage",
+    "aitrader.strategy",
+]
+
+[[tool.importlinter.contracts]]
+name = "The fees package depends only on the domain package"
+type = "forbidden"
+source_modules = ["aitrader.fees"]
 forbidden_modules = [
     "aitrader.ai",
     "aitrader.app",

@@ -33,7 +33,7 @@ PAPER uses the same values as the first LIVE stage, so paper evidence is represe
 | R-LIVE-3 | Capital used for sizing = min(actual equity, approved capital) | approved capital ¥50,000 | ¥100,000 |
 | R-INST-1 | Instruments | Allow-listed **liquid US ETFs only** (owner decision Q14); price ≥ USD 5; average daily dollar volume ≥ USD 20M; Webull `fractionable` and status `OC` | allow-list mandatory |
 | R-INST-2 | Prohibited | Short selling, margin, options, leveraged/inverse ETFs, OTC, extended-hours trading | always |
-| R-EVT-1 | Earnings blackout (single stocks) | No new entry from 2 trading days before to 1 day after earnings | — |
+| R-EVT-1 | Earnings blackout (single stocks) | No new entry from 2 trading days before to 1 day after earnings (implemented as 5 calendar days before and 4 after, which covers a weekend plus one holiday; to be replaced by the exchange calendar) | — |
 | R-ECON-1 | Cost efficiency | Expected round-trip cost ≤ 20% of the trade's risk budget | — |
 | R-ECON-2 | Minimum order | Quantity ≥ broker increment and value ≥ broker minimum; **never round up**. Webull fractional: buy ≥ USD 1, quantity step 0.00001; non-`fractionable` instruments: whole shares | — |
 | R-ECON-3 | Cash currency | Buys use **USD cash only**; an order that would need an implicit JPY→USD conversion is rejected | always |
@@ -59,6 +59,10 @@ apply AI size multiplier m in [0, 1] (never above 1), then round down again
 ```
 
 Worked example (¥50,000 ≈ USD 323 at ¥155/USD, stop 4% below entry, moomoo-style 0.132% commission): risk budget ≈ USD 1.61; maximum position ≈ USD 37; round-trip cost ≈ USD 0.13 (8% of budget) → approved. The same trade at a USD 1.00 minimum commission costs about 34% of the budget → rejected by R-ECON-1. Details in document 02, section 4.
+
+Implemented check (TASK-002, `tests/unit/risk/test_entry_rules.py`): with the Webull JP fee schedule, 5 bp spread and slippage per side and the 0.5% gap allowance, an ETF at USD 100 with a stop at USD 96 is sized to 0.34643 shares (USD 34.64); round-trip cost ≈ USD 0.054 = 3.3% of the USD 1.61 budget → approved. A commission of 1% of value (at most USD 1) per side gives 0.24594 shares and a cost of ≈ USD 0.51 = 31% of the budget → rejected by R-ECON-1.
+
+Fail-closed choices in the implementation: missing previous close or ATR fails CB-1; a missing benchmark change fails CB-2; an unknown (zero) volatility estimate gives an R-PORT-3 cap of zero; sizing uses a conservative fee bound that never decreases with quantity (the exact Webull FINRA fee is not monotonic because whole and fractional parts are charged separately).
 
 ## 3. Pre-trade check order
 
