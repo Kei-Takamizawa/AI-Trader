@@ -17,10 +17,10 @@ PAPER uses the same values as the first LIVE stage, so paper evidence is represe
 | ID | Parameter | Initial value | Hard cap in code |
 |---|---|---|---|
 | R-TRADE-1 | Risk per trade, **including fees, FX cost and slippage allowance** | 0.5% of equity | 1.0% |
-| R-DAY-1 | Daily loss limit (realised + unrealised vs. start-of-day equity) | 1.5% → no new entries until next session | 3.0% |
+| R-DAY-1 | Daily loss limit (realised + unrealised vs. start-of-day equity) | 1.5% → no new entries until next session (owner decision Q11) | 3.0% |
 | R-MONTH-1 | Soft monthly loss level | 3% → risk per trade halved | — |
-| R-MONTH-2 | Monthly loss limit (vs. month-start equity) | **5% → no new entries; resume only after owner re-enables (proposed, Q5)** | 5% |
-| R-DD-1 | Drawdown from equity peak | 10% → HALTED, owner review | 15% |
+| R-MONTH-2 | Monthly loss limit (vs. month-start equity) | **5% → no new entries; resume only after the owner re-enables (owner decision Q5)** | 5% |
+| R-DD-1 | Drawdown from equity peak | 10% → HALTED, owner review (owner decision Q12) | 15% |
 | R-POS-1 | Maximum open positions | 4 | 8 |
 | R-POS-2 | Maximum position size | 25% of equity per ETF; 10% per single stock | 30% |
 | R-PORT-1 | Gross exposure | ≤ 100% of settled cash equity (**no leverage**) | 100% |
@@ -31,7 +31,7 @@ PAPER uses the same values as the first LIVE stage, so paper evidence is represe
 | R-LIVE-1 | Maximum order notional (LIVE_MICRO) | ¥30,000 equivalent | ¥50,000 |
 | R-LIVE-2 | Maximum total holdings (LIVE_MICRO) | ¥100,000 equivalent | ¥100,000 |
 | R-LIVE-3 | Capital used for sizing = min(actual equity, approved capital) | approved capital ¥50,000 | ¥100,000 |
-| R-INST-1 | Instruments | Allow-listed symbols only; price ≥ USD 5; ETF average daily dollar volume ≥ USD 20M | allow-list mandatory |
+| R-INST-1 | Instruments | Allow-listed **liquid US ETFs only** (owner decision Q14); price ≥ USD 5; average daily dollar volume ≥ USD 20M; Webull `fractionable` and status `OC` | allow-list mandatory |
 | R-INST-2 | Prohibited | Short selling, margin, options, leveraged/inverse ETFs, OTC, extended-hours trading | always |
 | R-EVT-1 | Earnings blackout (single stocks) | No new entry from 2 trading days before to 1 day after earnings | — |
 | R-ECON-1 | Cost efficiency | Expected round-trip cost ≤ 20% of the trade's risk budget | — |
@@ -186,7 +186,7 @@ Reconciliation also runs after every reconnect, every 15 minutes in market hours
 | WD-3 | Alert on HALTED or KILLED, stale data, or no reconciliation for 30 minutes in market hours. |
 | WD-4 | The watchdog can set the remote kill flag. It holds no broker credentials (credentials stay on one host). |
 | WD-5 | The watchdog is itself watched: it runs on a different platform (heartbeat SaaS or a cloud function) and sends a daily "alive" summary; missing summary = problem. |
-| WD-6 | Alerts go to at least two independent channels (email + push). Muse is never the only channel. |
+| WD-6 | Alerts go to two independent channels: email and ntfy push (decision Q4). Muse is never the only channel. |
 
 ## 13. Hard caps enforced by the order gate
 

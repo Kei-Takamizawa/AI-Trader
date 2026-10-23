@@ -4,7 +4,7 @@
 
 | Item | Design |
 |---|---|
-| Where | Google Cloud Compute Engine, region `us-east1` (proposed; needs owner approval Q3) |
+| Where | Google Cloud Compute Engine, region `us-east1`, separate projects for PAPER and LIVE (decision Q3; each project is created after its own approval) |
 | VM | e2-micro (free tier) for PAPER with REST-based brokers; e2-small if memory is short or a Java gateway is required |
 | OS | Ubuntu LTS (or Debian), automatic security updates applied in the weekend maintenance window |
 | Process | `systemd` service `aitrader@<mode>.service` with `Restart=on-failure` and restart rate limits; one instance per mode/account (lock) |
@@ -70,9 +70,9 @@ Muse reads the bundle or the API (integration levels M1–M3 in document 06, sec
 
 | Severity | Examples | Channels | Expected owner action |
 |---|---|---|---|
-| CRITICAL | Heartbeat missing; HALTED by reconciliation mismatch; unexpected position; kill switch fired; hard-cap violation detected; LIVE start refused; Webull authentication failure (AUTH-1, AUTH-4); market data 403 (DATA-3) | Email + push, repeated every 15 min until acknowledged | Check status; follow runbook; decide on manual action |
-| HIGH | DEGRADED > 10 min; monthly soft limit reached; protective stop could not be placed; AI budget exhausted; Webull token expiring within 72 h; App Key expiring within 14/7/3 days; order errors (ORD-ERR-2) | Email + push once | Review same day |
-| WARNING | AI output invalid; single data-quality failure; order not filled in window | Daily report | Review in the daily report |
+| CRITICAL | Heartbeat missing; HALTED by reconciliation mismatch; unexpected position; kill switch fired; hard-cap violation detected; LIVE start refused; Webull authentication failure (AUTH-1, AUTH-4); market data 403 (DATA-3) | Email + ntfy, repeated every 15 min until acknowledged | Check status; follow runbook; decide on manual action |
+| HIGH | DEGRADED > 10 min; monthly soft limit reached; protective stop could not be placed; AI advisory missing for 3 trading days in a row, or API-fallback budget exhausted; Webull token expiring within 72 h; App Key expiring within 14/7/3 days; order errors (ORD-ERR-2) | Email + ntfy once | Review same day |
+| WARNING | AI advisory missing, late or invalid on one day; single data-quality failure; order not filled in window | Daily report | Review in the daily report |
 | INFO | Daily and monthly reports | Email | Read when convenient |
 
 Alert rate limiting prevents floods; a CRITICAL alert is never suppressed.
@@ -84,7 +84,7 @@ Alert rate limiting prevents floods; a CRITICAL alert is never suppressed.
 | Placement | Outside the trading VM: a heartbeat SaaS (free tier) or a small cloud function on a schedule |
 | Inputs | Engine heartbeats (every 60 s) and the freshness of `status/latest.json` in object storage |
 | Checks | WD-1 to WD-6 in document 05, section 12 |
-| Actions | Send alerts on two channels; optionally set the remote kill flag (the engine polls it every 30 s) |
+| Actions | Send alerts on both channels (email + ntfy); optionally set the remote kill flag (the engine polls it every 30 s) |
 | Self-check | Daily "watchdog alive" message; if it does not arrive, the owner knows the watchdog itself is down |
 | Independence | Does not use the AI service, the engine's database or the broker credentials |
 
@@ -111,5 +111,6 @@ Alert rate limiting prevents floods; a CRITICAL alert is never suppressed.
 |---|---|
 | Every trading day | Automated daily report; owner reads it when convenient. LIVE: Webull token status and `expires_at` checked hourly; one read-only authenticated call per day keeps the token from lapsing (15-day inactivity rule) |
 | Weekly (weekend) | Backups verified, OS updates, log rotation, dependency audit report |
+| Every trading day (AI) | Check that the advisory file for the day arrived before 09:00 ET; record a missed run. Monthly: review the scheduled task's run history and the research-preview release notes |
 | Monthly | Monthly report; AI and cloud invoices reconciled into `operating_costs`; Webull statements reconciled against `trade_costs` and `fx_conversions`; Webull API changelog and SDK releases reviewed; limit review |
 | Quarterly | Restore drill; fault drill; review of broker terms and fees |

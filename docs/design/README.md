@@ -1,4 +1,4 @@
-# AI-Trader Design Package (v0.2, draft for owner review)
+# AI-Trader Design Package (v0.3, draft for owner review)
 
 - **Status:** Draft. Nothing in this package has been implemented yet.
 - **Date of research:** 2026-10-23. Broker, data and pricing facts change often; every fact is tagged with how it was verified (see legend).
@@ -45,7 +45,7 @@
 | D-05 | The risk engine, order gate, execution and broker packages are forbidden from importing the AI package (checked in CI). | "Risk management independent from AI" (requirement section 7). |
 | D-06 | Start with daily-bar, long-only, cash-only, low-frequency ETF strategies. No leverage, no shorting, no options. | Matches the small-capital, low-frequency live plan and keeps costs low. |
 | D-07 | Live broker: **Webull Securities Japan** via the official Python SDK (`webull-openapi-python-sdk`, pinned). moomoo JP and IBSJ remain fallback adapters on paper only. Alpaca is considered only as a read-only market data source for BACKTEST/PAPER. | Owner decision; documents 02 and 14. |
-| D-08 | Cloud VM in a US region (Google Cloud Compute Engine `us-east1` proposed), managed by systemd. | Runs while the owner's Mac sleeps; close to US markets; free tier available for the smallest VM. |
+| D-08 | Google Cloud Compute Engine in `us-east1`, separate projects for PAPER and LIVE, managed by systemd. The home PC is for development and BACKTEST only. | Runs while the owner's machines sleep or lose power; static IP for Webull's IP allow-list; production keys stay away from machines where AI agents work (owner decision Q3). |
 | D-09 | SQLite (WAL mode) for state, JSON Lines structured logs, Parquet for market data. | Single-node, file-based, easy to back up and to inspect. |
 | D-10 | Economic gate: if small-capital trading cannot pass the cost and risk ratios in document 05, the system stays in PAPER. | Requirement: do not force trades under the ¥100,000 cap. |
 | D-11 | Live capital: start at ¥50,000, hard cap ¥100,000. Sizing uses min(actual equity, approved capital cap), so extra deposits never increase risk. | v0.2 requirement. |
@@ -54,21 +54,28 @@
 | D-14 | New entries stop automatically on API authentication problems (token not `NORMAL`, key expiry near/unknown, 401/403, event-stream auth errors), on data delay, and on order errors. | v0.2 requirement; document 05 sections 4, 8 and 16. |
 | D-15 | Claude and Codex never receive production order authority: no production Webull keys in any development environment; Webull MCP/CLI/Agent Skills are never connected to a production account; development uses fixtures and the public sandbox only. Only the owner can generate production keys (SMS + trading password). | v0.2 requirement; document 06. |
 | D-16 | The Webull SDK is imported only inside `aitrader.broker.webull`. Everything else talks to the broker through the `BrokerPort` interface, so another broker can replace Webull later. | v0.2 requirement; document 03. |
+| D-17 | AI analysis runs **outside** the trading system as a Claude Code scheduled task on the owner's subscription (Claude Opus 5.5). The engine publishes a sanitised input bundle to a private git data repository; the task writes a schema-checked advisory file back; the engine validates and imports it. The AI side holds no trading or broker credentials. | Owner decision Q6; no extra charge; keeps AI and order paths physically separate (document 11 §5). |
 
-## Decisions the owner needs to make
+## Owner decisions (recorded 2026-10-23)
 
-| ID | Question | Recommendation |
-|----|----------|----------------|
-| Q1 | Approve this design (or list changes). | — |
-| Q2 | Market data source for BACKTEST and PAPER. Webull's own data would put a trading-capable production key on the paper host (document 14 §7). | Free Alpaca paper-only account used **only** as a read-only data source (email sign-up, approval needed when Phase 2 starts). Phase 1 needs no external account. |
-| Q3 | Approve creating a Google Cloud project (needs a billing account even for the free tier) in Phase 3. | Approve when Phase 3 starts. |
-| Q4 | Notification channels for critical alerts (at least two independent channels). | Email plus one push channel (ntfy, Discord or Telegram). |
-| Q5 | After the 5% monthly loss halt: resume automatically next month, or only after manual re-enable? | Manual re-enable. |
-| Q6 | AI model and monthly AI budget cap. | Default model `claude-opus-5-5`; hard budget cap USD 10/month during PAPER. Cheaper models are listed in document 08 for your decision. |
-| Q7 | When to open the Webull account and apply for OpenAPI (Phase 6). | Only after PAPER has run stably; Webull sandbox tests need no account. |
-| Q8 | Enable Webull 2FA for the API (adds a phone confirmation when a token is created; token lapses after 15 days without calls). | Enable for LIVE. |
-| Q9 | Tax account for LIVE orders: tokutei (`SPECIFIC`) or general (`GENERAL`). | Tokutei account; withholding choice is yours. |
-| Q10 | Allow the operator to run the Webull sandbox contract tests (public shared test accounts, no personal data) after design approval. | Approve together with the design. |
+| ID | Topic | Decision |
+|----|-------|----------|
+| Q1 | Approve the design | **Open.** The owner will read v0.3 first. `CLAUDE.md`, `AGENTS.md` and `.ai/CURRENT_TASK.md` are created only after approval. |
+| Q2 | Market data for BACKTEST and PAPER | Free Alpaca paper-only account, used **only** as a read-only data source. The owner signs up when Phase 2 starts. |
+| Q3 | Where the system runs | Google Cloud for both PAPER and LIVE, in separate projects. The owner's always-on home PC is used for development and BACKTEST only. Projects are created when Phase 3 (PAPER) and Phase 7 (LIVE) start, each with a separate approval. |
+| Q4 | Critical-alert channels | Email + ntfy (push). |
+| Q5 | After the 5% monthly loss halt | Resume only after the owner re-enables manually. |
+| Q6 | AI analysis | Runs as a **Claude Code scheduled task on the owner's subscription** (no extra charge), model **Claude Opus 5.5**. If it ever has to switch to the pay-as-you-go API, a hard cap of USD 10/month applies and the switch needs a new approval. |
+| Q7 | Webull account and OpenAPI application | After PAPER has run stably (Phase 6). |
+| Q8 | Webull 2FA for the API | Enabled for LIVE. |
+| Q9 | Tax account for LIVE | Tokutei account with withholding (`SPECIFIC`). |
+| Q10 | Webull sandbox contract tests | Allowed as soon as the design is approved. |
+| Q11 | Daily loss limit | 1.5% of start-of-day equity; clears automatically at the next session. |
+| Q12 | Drawdown halt | 10% from the equity peak; all new entries stop until the owner reviews. |
+| Q13 | Merge rule | As proposed in document 06 §3: Claude merges when CI is green, acceptance criteria are met and no review findings are open; PRs touching risk limits, LIVE or new paid services need the owner's approval. |
+| Q14 | Initial instruments | Liquid US ETFs only; single stocks are considered later. |
+
+Approvals that remain separate and are asked for at the time: Alpaca sign-up (Phase 2), Google Cloud projects (Phase 3, Phase 7), creating the AI scheduled task and its data repository (Phase 4), Webull account and API keys (Phase 6), LIVE start (Phase 7), every later limit increase.
 
 ## Change log
 
@@ -76,3 +83,4 @@
 |---------|------|--------|
 | 0.1 | 2026-10-23 | First draft for owner review. |
 | 0.2 | 2026-10-23 | Webull Securities Japan as first-choice broker; research document 14; three-environment split (BACKTEST / PAPER virtual portfolio / LIVE disabled) with the Webull Sandbox for adapter tests only; new rules for authentication expiry, data delay and order errors; full cost recording; no production order authority for Claude/Codex. |
+| 0.3 | 2026-10-23 | Owner decisions Q2–Q14 recorded; AI analysis moved to a Claude Code scheduled task on the subscription, exchanging data with the engine through a git data repository; Google Cloud for PAPER and LIVE; email + ntfy alerts; ETF-only universe; costs and checklists updated. |

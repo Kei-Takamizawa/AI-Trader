@@ -40,13 +40,17 @@ flowchart LR
     broker["Broker: SimBroker (BACKTEST, PAPER) / Webull OpenAPI (LIVE, disabled)"]
     mdata["Market data (read-only source; Webull data in LIVE)"]
     news["News, filings and macro APIs"]
-    llm["LLM API (Claude)"]
+    datarepo["Private git data repository (input bundle, advisory)"]
+    aitask["Claude Code scheduled task (owner subscription, Opus 5.5)"]
     notify["Notification channels (email + push)"]
     muse["Muse (Meta AI) - future, read-only"]
 
     mdata --> engine
     news --> engine
-    engine <--> llm
+    engine -- "input bundle" --> datarepo
+    datarepo --> aitask
+    aitask -- "advisory file" --> datarepo
+    datarepo -- "advisory file" --> engine
     engine <--> broker
     engine --> status
     engine -- heartbeat --> watchdog
@@ -75,8 +79,8 @@ flowchart TB
     end
 
     subgraph advisory["Advisory (optional, may be off)"]
-        ai["AI analysis service"]
-        store["AI output store (replayable)"]
+        ai["Input bundle export / advisory import + validation"]
+        store["Advisory store (replayable)"]
     end
 
     subgraph exec_layer["Execution"]
@@ -120,7 +124,7 @@ flowchart TB
 
 Rules that the diagram encodes:
 
-- The AI service only writes **data** (advisory signals with a validity window) into a store. The strategy reads that data. No code path goes from the AI service to the order manager.
+- The AI runs outside the engine (Claude Code scheduled task) and only writes **data** — an advisory file with a validity window — to the data repository. The engine imports it into a store after validation; the strategy reads that data. No code path goes from the AI to the order manager, and the AI side holds no trading credentials.
 - The risk engine sees every intent before the order manager does. The order gate re-checks hard caps immediately before the broker call, so even a bug in the risk engine cannot exceed the hard limits.
 - The reconciler compares local state with broker state at start-up, after every reconnect and at the end of each day. Any mismatch halts new trading.
 
@@ -160,7 +164,9 @@ All internal timestamps are UTC. Schedules are defined in exchange time (America
 
 | Exchange time (ET) | JST during US DST (Mar–Nov) | JST otherwise | Job |
 |---|---|---|---|
-| 06:00 | 19:00 | 20:00 | Data refresh; AI pre-market analysis of news since the last close (advisory, stored with a validity window). |
+| 06:00 | 19:00 | 20:00 | Data refresh; engine publishes the AI input bundle (news, filings, calendar and price summaries since the last close) to the data repository. |
+| 07:37 / 06:37 | 20:37 | 20:37 | Claude Code scheduled task writes the advisory file (document 11 §5). |
+| 08:30–09:00 | 21:30–22:00 | 22:30–23:00 | Engine imports and validates the advisory; files arriving after 09:00 ET are ignored that day. |
 | 09:20 | 22:20 | 23:20 | Pre-open checks: clock, data freshness, broker connectivity, reconciliation, halt state, kill switch. |
 | 09:30 | 22:30 | 23:30 | Market opens. No orders in the first minutes (opening auction volatility). |
 | 09:35–10:30 | 22:35–23:30 | 23:35–00:30 | Execute orders decided at the previous close: limit orders with a price collar; unfilled orders are cancelled at the end of the window. |
@@ -177,33 +183,37 @@ Half-days and holidays come from the exchange calendar, not from a hand-written 
 sequenceDiagram
     participant S as Scheduler
     participant D as Data + quality gate
-    participant A as AI analysis (advisory)
     participant ST as Strategy
     participant R as Risk engine
+    participant G as Data repository
+    participant A as AI scheduled task
     participant O as Order manager + gate
     participant B as Broker
     participant L as Ledger / DB
 
     S->>D: End of day: fetch daily bars
     D-->>S: OK, or STALE / MISSING (then halt new entries)
-    S->>A: Analyse news and filings published before the decision time
-    A-->>L: Advisory signal (regime, event flags, confidence, valid_until)
-    S->>ST: Evaluate on bars up to today plus valid advisory signals
+    S->>ST: Evaluate on bars up to today
     ST-->>R: Order intents (symbol, side, size basis, stop, reason)
-    R-->>L: Approve / reduce / reject with rule IDs
-    S->>O: Next session, execution window opens
+    R-->>L: Provisional approve / reduce / reject with rule IDs
+    S->>G: 06:00 ET: publish input bundle (no account data)
+    A->>G: ~07:37 / 06:37 ET: read bundle, write advisory
+    S->>G: By 09:00 ET: fetch advisory
+    S->>L: Validate and store advisory (or no overlay)
+    S->>R: Execution window: re-check intents with fresh quotes and the AI overlay (veto / size x m, m <= 1)
+    R-->>L: Final decisions
     O->>O: Idempotency check (client order ID), write-ahead record
-    O->>B: Submit limit order
+    O->>B: Submit marketable limit order
     B-->>O: Ack, partial fills, fills, rejects
     O-->>L: Order and fill events
-    O->>B: Place protective stop where supported
+    O->>B: Protective stop where supported (otherwise system-side)
 ```
 
 ## 8. Failure domains and what happens when each fails
 
 | Failure | Detection | Automatic reaction |
 |---|---|---|
-| AI API down, slow or invalid output | Timeout, schema validation | Strategy runs without the AI overlay (rule-based baseline). Alert if repeated. |
+| AI scheduled task did not run, ran late, hit the subscription limit, or wrote an invalid file | Missing or invalid advisory at 09:00 ET | Strategy runs without the AI overlay (rule-based baseline). Warning alert; high alert after 3 trading days in a row. |
 | Market data stale or missing | Freshness and completeness checks | No new entries. Existing protective orders stay. Alert. |
 | Broker API errors or disconnect | Error counters, heartbeat to broker | DEGRADED state: no new entries, retry with backoff, reconcile after reconnect. |
 | Webull authentication expires or fails (token, App Key, 401/403) | Hourly token check, key-expiry record, error mapping | HALTED for new entries; owner re-authenticates (runbook RB-11). |
@@ -219,7 +229,7 @@ sequenceDiagram
 - Secrets are never committed. Paper and live secrets live in different secret stores, in different cloud projects.
 - The trading VM accepts no inbound connections from the internet (SSH only via the cloud provider's identity-aware tunnel or a private network such as Tailscale).
 - The status export contains no secrets and no full account numbers (masked).
-- News text and other external content are treated as untrusted data. The AI service runs without tools that act on the outside world; its output must match a strict schema with bounded values.
+- News text and other external content are treated as untrusted data. The AI scheduled task can write only to the data repository (no broker, cloud or vendor credentials); its output must match a strict schema with bounded values and is validated again by the engine.
 - Dependencies are pinned with hashes (lock file); updates go through review and the full test suite.
 
 ## 10. Mapping requirements to architecture

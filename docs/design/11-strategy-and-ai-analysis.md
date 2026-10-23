@@ -63,20 +63,44 @@ Parameters are fixed sets, not optimised per instrument. Walk-forward testing (d
 
 ## 5. AI analysis pipeline
 
+**Decision (Q6):** the analysis runs **outside the trading system**, as a **Claude Code scheduled task** on the owner's subscription (no extra charge), with **Claude Opus 5.5**. The engine and the task exchange plain files through a **private git data repository**. Neither side can reach the other directly, and the AI side holds no broker or trading credentials.
+
 ```mermaid
 flowchart LR
-    src["News, filings, macro calendar, earnings dates"] --> norm["Normalise + timestamp + hash + sanitise"]
-    prices["Price and volatility summary (computed by code)"] --> build
-    norm --> build["Build request (only items published before decision time)"]
-    build --> llm["LLM call (structured output, no tools)"]
-    llm --> val["Validate: schema, value ranges, cited items exist, validity window"]
-    val -->|"valid"| store["Advisory store (with provenance)"]
-    val -->|"invalid, late or refused"| fb["No overlay today (baseline) + log"]
-    store --> map["Deterministic mapping table (versioned with strategy)"]
-    map --> strat["Strategy: veto / size multiplier in [0, 1]"]
+    subgraph engine["Trading engine (PAPER / LIVE host)"]
+        src["News, filings, macro calendar, earnings dates, price summaries"] --> norm["Normalise + timestamp + hash + sanitise"]
+        norm --> bundle["Input bundle (JSON, only items published before decision time)"]
+        imp["Import + validate advisory (schema, ranges, cited IDs, validity window)"]
+        imp -->|"valid"| store["Advisory store (with provenance)"]
+        imp -->|"invalid, missing or late"| fb["No overlay today (baseline) + log"]
+        store --> map["Deterministic mapping table (versioned with strategy)"]
+        map --> strat["Strategy: veto / size multiplier in [0, 1]"]
+    end
+    subgraph repo["Private git data repository"]
+        inb[("inputs/YYYY-MM-DD.json")]
+        adv[("advisory/YYYY-MM-DD.json")]
+    end
+    subgraph task["Claude Code scheduled task (Anthropic cloud, owner subscription)"]
+        run["Read bundle, analyse with Claude Opus 5.5, write advisory, run schema check, push"]
+    end
+    bundle --> inb
+    inb --> run
+    run --> adv
+    adv --> imp
 ```
 
-### 5.1 Tasks given to the AI
+### 5.1 Daily timing
+
+| Step | Time (ET) | JST during US DST | JST otherwise |
+|---|---|---|---|
+| Engine publishes the input bundle | by 06:00 | 19:00 | 20:00 |
+| Scheduled task runs (fixed JST schedule, a few minutes past the hour because runs on the hour can start late) | 07:37 / 06:37 | **20:37** | **20:37** |
+| Engine imports the advisory | 08:30–09:00 | 21:30–22:00 | 22:30–23:00 |
+| Hard deadline (later files are ignored that day) | 09:00 | 22:00 | 23:00 |
+
+The task runs every day; on non-trading days it finds no bundle and exits without writing.
+
+### 5.2 Tasks given to the AI
 
 | Task | Output (strict JSON schema) | Used for |
 |---|---|---|
@@ -84,9 +108,9 @@ flowchart LR
 | T2 Symbol event risk | per symbol: `flag` ∈ {none, elevated, severe}, `horizon_days`, `reason`, `cited_item_ids[]` | Symbol veto |
 | T3 Daily narrative | Short summary of what happened and why positions changed | Reports only, no trading effect |
 
-The AI never receives account balances, credentials or order details; it does not need them.
+The bundle never contains account balances, positions, credentials or order details; the AI does not need them.
 
-### 5.2 Mapping AI output to actions (code, not AI)
+### 5.3 Mapping AI output to actions (code, not AI)
 
 | AI output | Action |
 |---|---|
@@ -96,19 +120,37 @@ The AI never receives account balances, credentials or order details; it does no
 | T2 `elevated` | New entries in that symbol × 0.5 |
 | Anything invalid, missing, late, refused or over budget | No overlay (baseline) |
 
-The mapping is part of the versioned strategy configuration, so its effect is reproducible and reviewable. AI output can never increase size, add orders or change stops.
+The mapping is part of the versioned strategy configuration, so its effect is reproducible and reviewable. AI output can never increase size, add orders or change stops. A consequence worth stating: **even a tampered or wrong advisory file can only make the system trade less**, never more.
 
-### 5.3 Model and call settings
+### 5.4 Scheduled task settings
 
-- Default model `claude-opus-5-5` (configurable). Structured outputs through `output_config.format`; adaptive thinking with an explicit effort level; refusal (`stop_reason: "refusal"`) is treated as "no overlay".
-- Non-urgent jobs use the Message Batches API (50% cheaper). The pre-market job has a hard deadline (09:00 ET); missing it means no overlay that day.
-- The current API no longer accepts sampling parameters such as temperature, so outputs are not exactly repeatable. **Every request and response is stored** (prompt template version, input item hashes, model ID, token usage, cost) and backtests replay the stored outputs instead of calling the model again.
-- A monthly budget cap is enforced before each call (document 08).
+| Setting | Value |
+|---|---|
+| Model | Claude Opus 5.5 (chosen in the task's model selector) |
+| Repository | The private data repository only (not the code repository) |
+| Connectors | None except GitHub access to the data repository |
+| Network | Default "Trusted" allow-list; no extra domains (all inputs come in the bundle) |
+| Secrets | None (no broker, data-vendor or cloud credentials) |
+| Prompt | Versioned in the code repository (`ai/prompts/`), copied into the task; the advisory records the prompt version |
+| Output check | The task runs the schema validator from the data repository before pushing; the engine validates again on import |
+| Usage | Draws from the subscription's usage limits. If the limit is reached, the run is rejected → no advisory → baseline that day |
 
-### 5.4 Safety of AI inputs
+Status of the feature: Claude Code scheduled tasks are a **research preview**; behaviour and limits may change, runs on the hour can start a few minutes late, and the minimum interval is one hour (official docs, 2026-10-23). The design tolerates a missing run by falling back to the baseline.
 
-- News text is untrusted. It is stripped of markup, length-limited and placed in a clearly marked data section; the instructions state that content inside it is data, not instructions.
-- The AI call has no tools and no network access. Output must match the schema; `cited_item_ids` must refer to items that were actually in the request (simple hallucination check).
+### 5.5 Fallback: pay-as-you-go API (only after a new approval)
+
+If the scheduled task becomes unreliable or its terms change, the same prompt and schema can run through the Anthropic API from a small job, with the input bundle as the request and the advisory as the response. That mode uses structured outputs, the Message Batches API where timing allows, and a hard **USD 10/month cap** enforced before each call. Switching modes needs the owner's approval.
+
+### 5.6 Reproducibility
+
+- Model output is not exactly repeatable (the current API no longer accepts sampling parameters such as temperature). Therefore **every advisory file is kept** with the model name, prompt version, input-bundle hash and creation time, and backtests replay these files instead of calling the model again.
+- The data repository's git history is the audit trail of what the AI said and when.
+
+### 5.7 Safety of AI inputs
+
+- News text is untrusted. It is stripped of markup, length-limited and placed in a clearly marked data section of the bundle; the prompt states that content inside it is data, not instructions.
+- Output must match the schema; `cited_item_ids` must refer to items that were actually in the bundle (simple hallucination check).
+- The scheduled task can only write to the data repository; it has no route to the trading host or the broker.
 
 ## 6. Handling shocks, delays, uncertainty and regime change
 

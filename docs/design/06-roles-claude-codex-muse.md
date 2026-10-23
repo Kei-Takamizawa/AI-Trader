@@ -7,6 +7,7 @@
 | Owner | You | Approve design, phases, sign-ups, spending, LIVE activation and limit changes; receive critical alerts; handle broker accounts and real credentials. | — |
 | Architect / reviewer | Claude (cloud session) | Architecture, strategy research and design, task specifications for Codex, code review, analysis of backtest and paper results, improvement proposals, merging under the merge rule below. | Writing product or test code; handling real credentials; enabling LIVE; changing risk limits without owner approval. |
 | Operator | Claude on the owner's PC | Runs Codex, does all Git work (branch, commit, push, draft PR), checks Codex reports, cleans up work files, reports cycle start/finish. | Editing `~/.codex/config.toml`; bypass or full-access flags; force-push or history rewrites; paid services; anything outside the project folder. |
+| AI analyst | Claude Code scheduled task (owner subscription, Claude Opus 5.5) | Once a day: read the input bundle from the data repository, write the advisory file (regime, event flags, narrative) in the fixed schema. | Access to the code repository, the trading hosts, broker or vendor credentials; changing prompts, schemas or mappings (those change only through reviewed PRs). |
 | Implementer | Codex | Python implementation, API adapters, backtest engine, trading engine, automated and fault tests, bug fixes, performance work, change proposals as PRs. | Touching live configuration or secrets; disabling tests; weakening hard caps or LiveGuard; adding dependencies outside the task scope without saying so. |
 | Operations assistant (future) | Muse (Meta AI) | Read reports and status; summarise health; analyse anomaly logs; help investigate incidents; draft daily/monthly P&L commentary; report issues. | Any write access: no orders, no config, no code, no credentials. Its output is advisory and goes through Claude review before any change. |
 
@@ -33,7 +34,7 @@ sequenceDiagram
     C-->>O: Short report (task ID, commit, status, failures)
 ```
 
-## 3. Proposed merge rule
+## 3. Merge rule (owner decision Q13)
 
 Claude may merge a pull request only when **all** hold:
 
@@ -113,6 +114,7 @@ Rule: **only the LIVE host, after the owner's explicit approval, can send orders
 | Where they live | Only in the LIVE secret store on the LIVE host. Never in the repository, CI secrets, the PAPER host, the owner's PC development folder, or any AI tool configuration. |
 | What developers and agents use | Recorded fixtures, `SimBroker`, and the Webull **Sandbox** with Webull's public shared test keys (read from environment variables, not committed). |
 | Webull's own AI tools | Webull Cloud MCP, local MCP, CLI and Agent Skills are **not connected** to the production account from Claude, Codex or Muse. If read-only access is ever wanted for analysis, it needs a separate owner decision and Webull's read-only toolset; trading toolsets stay disabled. |
+| AI scheduled task | Attached only to the private data repository; its cloud environment holds no secrets and only the default network allow-list; no connectors except GitHub. |
 | Code paths | PAPER/BACKTEST configs have no production credential fields; the Webull adapter accepts production hosts only with `AITRADER_ENV=live` and passing LiveGuard (document 04 §6). |
 | Changes that touch LIVE | Protected paths (section 3): owner approval required in the PR; deployment to the LIVE host is done manually by the operator after approval, not by CI. |
 | Detection | Secret scanning in CI; a start-up check on PAPER and development hosts that refuses to run if any `LIVE_*` or Webull production variable is present. |

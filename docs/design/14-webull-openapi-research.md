@@ -125,7 +125,7 @@ Worked example for a ¥50,000 account (USD/JPY 155 [A]):
 | Webull Sandbox tests | Adapter contract tests against the UAT endpoints with the public shared test accounts. Never used for P&L or as a portfolio. | Public sandbox test keys only |
 | LIVE | Webull production API, disabled until approval | Production App Key/Secret and token, **only** in the LIVE secret store on the LIVE host |
 
-Note on PAPER market data: using Webull's own market data in PAPER would require a **production** App Key on the paper host. The documentation does not describe a data-only key, and Level 1 data may be used by only one device at a time. To keep production credentials on the LIVE host only, PAPER uses a separate read-only data source (proposed: Alpaca market data on a free paper-only account, owner approval Q2). If Webull confirms a data-only permission, this can be revisited.
+Note on PAPER market data: using Webull's own market data in PAPER would require a **production** App Key on the paper host. The documentation does not describe a data-only key, and Level 1 data may be used by only one device at a time. To keep production credentials on the LIVE host only, PAPER uses a separate read-only data source (decided: Alpaca market data on a free paper-only account, owner decision Q2). If Webull confirms a data-only permission, this can be revisited.
 
 ## 8. Items to verify after design approval
 

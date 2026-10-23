@@ -7,8 +7,8 @@ All figures are estimates. USD/JPY = 155 [A]. Prices checked 2026-10-23 unless m
 | Item | Cost | Note |
 |---|---|---|
 | Design and development | ¥0 extra | Uses existing Claude/Codex subscriptions |
-| Read-only data source (Alpaca paper-only account) | ¥0 | Email sign-up [V] (needs approval Q2) |
-| Cloud project set-up | ¥0 | A billing account (card) is required even for the free tier [U for exact steps] (needs approval Q3) |
+| Read-only data source (Alpaca paper-only account) | ¥0 | Email sign-up by the owner at Phase 2 [V] (decision Q2) |
+| Cloud project set-up | ¥0 | A billing account (card) is required even for the free tier [U for exact steps] (Google Cloud decided, Q3; project creation approved at Phase 3 / Phase 7) |
 | Webull account opening and OpenAPI application (Phase 6) | ¥0 | Account opening/maintenance and API use are free [V] |
 | Initial JPY→USD conversion of ¥50,000 | ≈ ¥48 | JPY 0.15 per USD [V]; ≈ ¥96 for ¥100,000 |
 | Initial live capital (Phase 7) | ¥50,000 (cap ¥100,000) | This is capital, not a cost |
@@ -23,8 +23,8 @@ All figures are estimates. USD/JPY = 155 [A]. Prices checked 2026-10-23 unless m
 | Public IPv4 address | USD 0–4 [U] | USD 0–4 [U] | Check whether the free tier covers it |
 | Backups (object storage) | ≈ USD 0–1 [A] | ≈ USD 1 [A] | A few GB |
 | Watchdog / heartbeat monitor | USD 0 (free tier of a SaaS or cloud function) [U] | USD 0–5 [U] | — |
-| Notifications | USD 0 (email, ntfy, Discord or Telegram) [U] | USD 0 | — |
-| Separate LIVE project (Phase 7+) | + same again | + same again | LIVE runs on its own VM |
+| Notifications | USD 0 (email + ntfy, decision Q4) [U] | USD 0 | — |
+| Separate LIVE project (Phase 7+) | ≈ USD 6–7 for an e2-micro outside the free tier [A] + static IP ≈ USD 3–4 [U] | ≈ USD 13 (e2-small) + static IP | The free tier covers only one e2-micro per billing account |
 
 ### 2.2 Market data and news
 
@@ -35,49 +35,55 @@ All figures are estimates. USD/JPY = 155 [A]. Prices checked 2026-10-23 unless m
 | Static IP for the Webull IP allow-list (LIVE VM) | a few USD/month [U] | Only for the LIVE project |
 | News / filings / macro | USD 0 (SEC EDGAR, FRED; Alpaca news if free) [U] | Paid news is not justified at this capital |
 
-### 2.3 AI (LLM) costs
+### 2.3 AI costs
 
-Official Anthropic prices [V] (per million tokens, input / output): Claude Opus 5.5 USD 4 / 20; Claude Sonnet 5.5 USD 2 / 10; Claude Haiku 5.5 USD 0.10 / 0.50 (prompts up to 100k tokens). The Batch API halves both [V]. Cache hits cost 5% of the input price on Opus 5.5 and Sonnet 5.5 [V]. Reasoning (thinking) tokens are billed as output.
+**Decision (Q6):** AI analysis runs as a Claude Code scheduled task on the owner's existing subscription with Claude Opus 5.5. Scheduled tasks draw from the subscription's usage limits and carry **no extra charge** [V: Claude Code docs, 2026-10-23]. Marginal AI cost is therefore **¥0**, recorded as `AI_SUBSCRIPTION = 0` in `operating_costs`; the subscription fee itself is an existing cost and is not allocated to this project. Two side effects are not money but matter:
 
-Workload assumption [A]: 1 pre-market analysis per trading day, ~21 trading days/month, about 60k input tokens (headlines, filings excerpts, price summary) and about 10k output tokens (including reasoning) per day, sent through the Batch API when timing allows.
+- The runs use the same usage allowance as development work with Claude. A day on which the limit is reached simply has no advisory (baseline trading).
+- The feature is a research preview; terms may change. A change that adds a charge triggers the fallback decision below.
 
-| Model | Per day (standard) | Per month (standard) | Per month (batch) |
-|---|---|---|---|
-| `claude-opus-5-5` (design default) | 0.24 + 0.20 = USD 0.44 | ≈ USD 9.2 (≈ ¥1,430) | ≈ USD 4.6 (≈ ¥710) |
-| `claude-sonnet-5-5` | USD 0.22 | ≈ USD 4.6 | ≈ USD 2.3 |
-| `claude-haiku-5-5` | USD 0.011 | ≈ USD 0.23 | ≈ USD 0.12 |
+Fallback (pay-as-you-go API, only after a new approval). Official prices [V] per million tokens (input / output): Claude Opus 5.5 USD 4 / 20; Claude Sonnet 5.5 USD 2 / 10; Claude Haiku 5.5 USD 0.10 / 0.50. The Batch API halves both. Workload assumption [A]: one analysis per trading day, ~21 days/month, ~60k input and ~10k output tokens (including reasoning).
 
-During P4 (A/B test) the AI also runs the same analysis on shadow books, roughly doubling calls. A hard **monthly AI budget cap** (proposed USD 10, owner decision Q6) is enforced in code: when the cap is reached the AI overlay switches off and the rule-based baseline continues. The choice of a cheaper model is your decision; the design keeps the model configurable.
+| Model | Per month (standard) | Per month (batch) |
+|---|---|---|
+| `claude-opus-5-5` | ≈ USD 9.2 (≈ ¥1,430) | ≈ USD 4.6 (≈ ¥710) |
+| `claude-sonnet-5-5` | ≈ USD 4.6 | ≈ USD 2.3 |
+| `claude-haiku-5-5` | ≈ USD 0.23 | ≈ USD 0.12 |
 
-### 2.4 Total monthly cost scenarios
+In fallback mode a hard **USD 10/month cap** (decision Q6) is enforced in code: when it is reached, the AI overlay switches off and the rule-based baseline continues.
 
-| Scenario | Infra | Data | AI | Total (USD) | Total (JPY) |
-|---|---|---|---|---|---|
-| A. Minimal (free-tier VM, rule-based only) | 0–5 | 0 | 0 | 0–5 | ¥0–780 |
-| B. Minimal + AI (Opus 5.5, batch) | 0–5 | 0 | ≈ 5 | ≈ 5–10 | ≈ ¥780–1,550 |
-| C. Standard (e2-small + AI Opus 5.5, standard calls) | ≈ 14–18 | 0 | ≈ 9 | ≈ 23–27 | ≈ ¥3,600–4,200 |
-| D. Standard + LIVE project (Phase 7) | ≈ 28–36 | 0 | ≈ 9 | ≈ 37–45 | ≈ ¥5,700–7,000 |
+### 2.4 Total monthly cost scenarios (owner decisions applied)
+
+| Phase | What runs | Infra (USD) | Data | AI | Total (USD) | Total (JPY) |
+|---|---|---|---|---|---|---|
+| P1–P2 (development, BACKTEST) | Home PC + CI | 0 | 0 | 0 | 0 | ¥0 |
+| P3–P6 (PAPER) | GCP project `aitrader-paper`: e2-micro free tier, IPv4 0–4 [U], backups 0–1 | 0–5 | 0 | 0 (subscription) | 0–5 | ¥0–780 |
+| P7+ (LIVE_MICRO + PAPER) | PAPER as above + `aitrader-live`: e2-micro outside the free tier ≈ 6–7 [A], static IP ≈ 3–4 [U], backups ≈ 1 [A] | ≈ 10–17 | 0 | 0 (subscription) | ≈ 10–17 | ≈ ¥1,550–2,640 |
+| P7+ with the PAPER project stopped | LIVE only | ≈ 10–12 | 0 | 0 | ≈ 10–12 | ≈ ¥1,550–1,860 |
+| Fallback: API instead of subscription | add | — | — | ≤ 10 (cap) | + up to 10 | + up to ¥1,550 |
+
+The free tier covers one e2-micro instance per billing account per month [V], so the second (LIVE) VM is paid.
 
 ## 3. What this means for a ¥50,000–100,000 account
 
-| Capital | Monthly target 1–2% | Scenario A | Scenario B | Scenario C |
-|---|---|---|---|---|
-| ¥50,000 | ¥500–1,000 | 0–156% of target | 78–310% of target | 360–840% of target |
-| ¥100,000 | ¥1,000–2,000 | 0–78% of target | 39–155% of target | 180–420% of target |
-
-Break-even capital, where monthly costs equal a 1% monthly return:
-
-| Scenario | Monthly cost | Break-even capital at 1%/month | At 2%/month |
+| Capital | Monthly target 1–2% | PAPER phase (¥0–780) | LIVE phase (≈ ¥1,550–2,640) |
 |---|---|---|---|
-| A (upper end) | ¥780 | ¥78,000 | ¥39,000 |
-| B (upper end) | ¥1,550 | ¥155,000 | ¥78,000 |
-| C | ¥3,900 | ¥390,000 | ¥195,000 |
+| ¥50,000 | ¥500–1,000 | 0–156% of target | 155–528% of target |
+| ¥100,000 | ¥1,000–2,000 | 0–78% of target | 78–264% of target |
+
+Break-even capital, where monthly costs equal the monthly return:
+
+| Monthly cost | At 1%/month | At 2%/month |
+|---|---|---|
+| ¥780 (PAPER phase, upper end) | ¥78,000 | ¥39,000 |
+| ¥1,550 (LIVE only, lower end) | ¥155,000 | ¥78,000 |
+| ¥2,640 (LIVE + PAPER, upper end) | ¥264,000 | ¥132,000 |
 
 Conclusions:
 
-1. At ¥50,000–100,000 the **operating costs are of the same size as, or larger than, the profit target**. Net results after costs will likely be around zero or negative even if the strategy meets the 1–2% target, which itself is not assumed to be achievable.
+1. At ¥50,000–100,000 in LIVE, **operating costs are of the same size as, or larger than, the profit target**. Net results after costs will likely be around zero or negative even if the strategy meets the 1–2% target, which itself is not assumed to be achievable.
 2. The small live phase is therefore a **technical and execution-quality test**. Its success criteria are correct execution, clean reconciliation and realistic costs — not profit.
-3. To keep costs low in LIVE_MICRO: free-tier VM, daily-bar cadence, batch AI calls, and the AI overlay only if P4 shows it is worth its cost.
+3. Running AI on the subscription removes the AI cost; the remaining LIVE cost is the second VM and its static IP. Stopping the PAPER project during LIVE saves up to ≈ ¥780/month but loses the parallel paper comparison — to be decided at Phase 7.
 
 ## 3a. Trading costs at Webull (recorded as trading P&L, not operating cost)
 
@@ -94,6 +100,6 @@ Conclusions:
 
 - Trading P&L (prices, commissions, regulatory fees, FX, dividends) is recorded in the ledger's trading accounts. Each fee is its own row in `trade_costs` (taken from Webull's per-order `commission` and `fees[]` breakdown when available, otherwise estimated by the `webull_jp` cost model and marked as estimated); each JPY⇄USD conversion is a row in `fx_conversions` with the applied rate, the reference rate and the spread cost.
 - Operating costs go to a separate `operating_costs` table with categories **AI**, **SERVER**, **DATA**, **OTHER**:
-  - AI: computed per call from the API's reported token usage and the price table in config; reconciled monthly with the provider invoice.
+  - AI: subscription mode records 0 per run (with the run reference); fallback API mode computes each call from the reported token usage and the price table in config and reconciles monthly with the invoice.
   - SERVER and DATA: monthly invoice amounts entered by the operator (or imported from billing exports), allocated per day.
 - Reports show three lines separately: **trading P&L**, **operating costs**, **net**.

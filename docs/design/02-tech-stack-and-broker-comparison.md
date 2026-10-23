@@ -87,9 +87,9 @@ Operating costs are a separate and larger problem at this size (see document 08)
 
 | Purpose | Choice (v0.2) | Status |
 |---|---|---|
-| BACKTEST data | Alpaca historical data (free plan, consolidated history older than 15 minutes), used read-only, with a second source for cross-checks | Needs Alpaca sign-up (owner approval Q2) |
+| BACKTEST data | Alpaca historical data (free plan, consolidated history older than 15 minutes), used read-only, with a second source for cross-checks | Decided (Q2); the owner signs up when Phase 2 starts |
 | PAPER | Our own virtual portfolio (`SimBroker` + ledger) with live data from the same read-only source and the `webull_jp` cost/fractional profile | No broker account needed |
-| Broker adapter tests | Webull Sandbox (shared public test accounts) | After design approval (Q10) |
+| Broker adapter tests | Webull Sandbox (shared public test accounts) | Allowed once the design is approved (Q10 decided) |
 | LIVE | **Webull Securities Japan** via the official Python SDK; disabled until approval | Owner decision; open points in document 14 §8 |
 | Fallbacks | moomoo JP (percentage fees) and IBSJ (needs more capital) — adapters only if Webull fails verification | Not planned |
 
@@ -141,9 +141,9 @@ For Webull the concrete list is in document 14, section 8 (sandbox checks SB-1 t
 | Tests | pytest, hypothesis (property tests for risk), time-machine, respx (HTTP mocks), pytest-cov | Fault and edge cases can be simulated | — |
 | Static checks | ruff (lint + format), mypy (strict for core packages), import-linter (dependency rules) | Enforces "risk does not import AI" mechanically | — |
 | CI | GitHub Actions | Runs on every pull request | — |
-| LLM | Anthropic Python SDK, structured outputs; Message Batches for non-urgent analysis | Schema-checked outputs; batch is 50% cheaper [V] | — |
-| Data SDK | `alpaca-py` market data client only (no trading calls), if Q2 is approved | Read-only data for BACKTEST/PAPER | Another data vendor |
-| Notifications | Email (SMTP) + one push channel (ntfy / Discord / Telegram webhook) | Two independent channels | LINE Notify (service ended in 2025) |
+| LLM | Claude Code scheduled task on the owner subscription, Claude Opus 5.5 (owner decision Q6); exchange via a private git data repository | No extra charge; AI physically separated from the trading host | Anthropic Python SDK with structured outputs and Message Batches (fallback, USD 10/month cap, needs approval) |
+| Data SDK | `alpaca-py` market data client only (no trading calls), as decided in Q2 | Read-only data for BACKTEST/PAPER | Another data vendor |
+| Notifications | Email (SMTP) + ntfy push (owner decision Q4) | Two independent channels | LINE Notify (service ended in 2025) |
 | Watchdog | External heartbeat monitor (SaaS free tier or a small cloud function) | Different failure domain from the VM | — |
 | Hosting | Google Cloud Compute Engine, `us-east1`; free tier e2-micro (1 instance/month in us-west1, us-central1 or us-east1) [V] | Low cost, US region | AWS Lightsail, Hetzner |
 

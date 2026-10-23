@@ -59,7 +59,7 @@ AI-Trader/
 | `clock` | `Clock` port (`now()`, `sleep_until()`), `SimClock` for backtests, `WallClock` for paper/live, exchange sessions via `exchange_calendars`. | Use `datetime.now()` anywhere else (enforced by lint rule). |
 | `data` | `MarketDataProvider` port; adapters (`csv_replay`, `parquet_store`, `alpaca_data`, later broker data); `DataQualityGate`. | Return data with timestamps later than `clock.now()` (look-ahead guard). |
 | `news` | `NewsSource`, `FilingSource`, `MacroSource` ports; normalisation with `published_at`, `retrieved_at`, source and hash. | Pass raw HTML to the AI service without sanitising. |
-| `ai` | Build prompts from sanitised inputs, call the LLM port, validate structured output, store results with full provenance, replay stored results in backtests, enforce the AI budget. | Import `execution`, `broker` or `risk`. Hold any credential except the LLM key. |
+| `ai` | Build the sanitised **input bundle** and publish it to the data repository; fetch, schema-validate and store the **advisory file** written by the Claude Code scheduled task; keep the prompt templates and schemas (versioned, `ai/prompts/`, `ai/schemas/`); replay stored advisories in backtests; optional pay-as-you-go API client (fallback mode, only after approval) with the USD 10/month cap. | Import `execution`, `broker` or `risk`. Put account data, positions or credentials into the bundle. Hold any credential except the data-repository token (and the API key in fallback mode). |
 | `strategy` | Pure functions: given bars, portfolio snapshot and valid advisory signals, return `OrderIntent`s with reasons. Versioned parameters. | Perform I/O, read the clock directly, or import `ai`. |
 | `risk` | Pre-trade checks, position sizing with fees, portfolio limits, loss limits, circuit breakers, halt state machine. | Import `ai`. Depend on anything non-deterministic. |
 | `execution` | Order manager (idempotent submission, state machine, write-ahead records, cancel/replace, protective stops); `OrderGate` (final hard-cap check). | Import `ai`. Submit without an approved `RiskDecision`. |
@@ -223,7 +223,7 @@ Operational rules: SDK retries are not relied on for POST requests; a timeout ma
 | `runs` | One row per process start or backtest run | run_id, mode, git_commit, config_hash, data_snapshot_hash, started_at, ended_at |
 | `heartbeats` | Liveness | run_id, ts, state (RUNNING / DEGRADED / HALTED / SAFE) |
 | `bars` (or Parquet) | Market data used for decisions | symbol, ts, o/h/l/c/v, source, ingest_ts |
-| `advisory_signals` | AI outputs with provenance | advisory_id, kind, payload_json, model_id, prompt_hash, input_hash, created_at, valid_from, valid_until, cost_usd |
+| `advisory_signals` | AI outputs with provenance | advisory_id, kind, payload_json, source (scheduled_task / api), model_id, prompt_version, input_bundle_hash, created_at, valid_from, valid_until, cost_usd (0 on subscription) |
 | `intents` | Strategy outputs | intent_id, strategy_id, version, payload_json, signal_ts |
 | `risk_decisions` | Risk verdicts | intent_id, verdict, approved_qty, rule_results_json, limits_hash |
 | `orders` | Order life cycle | client_order_id, intent_id, broker_order_id, status, request_json, updated_at |

@@ -7,7 +7,7 @@ LIVE stays disabled until **every** item is checked and the owner signs the appr
 - [ ] A1. Owner has read the latest paper report, the A/B report (if AI is used) and this checklist.
 - [ ] A2. Owner approves in writing: broker, account (masked ID), live limits (hash), start date, approval expiry.
 - [ ] A3. Owner confirms that the live capital is money they can afford to lose completely.
-- [ ] A4. Owner confirms the incident contacts and notification channels.
+- [ ] A4. Owner confirms the incident contacts and that both alert channels (email + ntfy, decision Q4) reach them.
 
 ## B. Broker and account
 
@@ -17,7 +17,7 @@ LIVE stays disabled until **every** item is checked and the owner signs the appr
 - [ ] B4. Owner can log in to the broker app to cancel orders manually (runbook tested).
 - [ ] B5. Broker's minimum order size, quantity increment and fee schedule are entered in config and match a test order in the broker's test environment.
 - [ ] B6. Webull: OpenAPI application approved; OpenAPI market data subscription (Nasdaq Basic) active; answers to WB-1 to WB-8 (document 14 §8) recorded.
-- [ ] B7. Webull: account type `CASH`; tax type (`SPECIFIC` or `GENERAL`) chosen (Q9) and set in config.
+- [ ] B7. Webull: account type `CASH`; tokutei account with withholding (`SPECIFIC`, decision Q9) set up and set in config.
 - [ ] B8. Webull: JPY converted to USD once by the owner; the conversion and its spread are recorded in `fx_conversions`; risk engine uses USD cash only.
 - [ ] B9. Webull: allow-listed instruments are `fractionable` and tradable (`OC`) on the day of go-live.
 
@@ -29,7 +29,7 @@ LIVE stays disabled until **every** item is checked and the owner signs the appr
 - [ ] C4. No inbound internet access to the live VM; SSH only through the private tunnel; MFA on the cloud and broker accounts.
 - [ ] C5. Backups encrypted and restore tested.
 - [ ] C6. Webull production App Key/Secret generated **by the owner** (SMS + trading password), stored only in the LIVE secret store; key expiry date recorded; reminders configured.
-- [ ] C7. Webull 2FA decision applied (Q8); if enabled, token created and confirmed by the owner on the LIVE host; token directory 0700 outside the repository.
+- [ ] C7. Webull 2FA enabled (decision Q8); token created and confirmed by the owner on the LIVE host; token directory 0700 outside the repository.
 - [ ] C8. Webull IP allow-list set to the LIVE VM's static IP (WB-3).
 - [ ] C9. No Webull production credential exists in any development environment, CI secret, PAPER host or AI tool configuration (Webull MCP/CLI/Skills not connected to the production account).
 
@@ -60,7 +60,7 @@ LIVE stays disabled until **every** item is checked and the owner signs the appr
 
 - [ ] F1. Live limits file within hard caps: approved capital ¥50,000 (hard cap ¥100,000), max order ≤ ¥30,000 equivalent (hard cap ¥50,000), total holdings ≤ ¥100,000, per-trade risk ≤ 0.5% including fees, daily 1.5%, monthly 5%, drawdown 10%.
 - [ ] F2. Allow-list of instruments reviewed (liquid ETFs first).
-- [ ] F3. Monthly-halt resumption policy set (Q5).
+- [ ] F3. Monthly-halt resumption is manual (decision Q5) and the `unhalt` command is tested.
 - [ ] F4. Stop-order handling for the broker confirmed (broker-side or system-side) and tested.
 
 ## G. Economic feasibility (small capital)

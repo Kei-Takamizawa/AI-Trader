@@ -17,16 +17,16 @@ The **Webull Sandbox** is not an operating environment. It is a **test target** 
 | Component | BACKTEST | PAPER | Sandbox contract tests | LIVE |
 |---|---|---|---|---|
 | Clock | `SimClock` | `WallClock` | `WallClock` | `WallClock` |
-| Market data | Historical Parquet replay | Read-only data source (proposed: Alpaca data, Q2) | Sandbox endpoints (if available) | Webull production market data |
+| Market data | Historical Parquet replay | Read-only data source: Alpaca market data (decision Q2) | Sandbox endpoints (if available) | Webull production market data |
 | News / filings | Historical, timestamped | Live sources | — | Live sources |
-| AI analysis | Replay of recorded outputs, or OFF | Live (budget-capped) or OFF | — | Live or OFF |
+| AI analysis | Replay of recorded advisory files, or OFF | Advisory from the Claude Code scheduled task via the data repository, or OFF | — | Same as PAPER, or OFF |
 | Strategy, risk engine, order manager, order gate | same | same | same order manager and gate (strategy not involved) | same (LIVE limit file) |
 | Broker adapter | `SimBroker` | `SimBroker` | `WebullBroker(WEBULL_SANDBOX)` | `WebullBroker(WEBULL_LIVE)` |
 | Cost model | Broker profile (default `webull_jp`) | `webull_jp` | Webull's actual responses | Webull's actual fees |
 | Database | `data/backtest/<run_id>.db` | `data/paper/state.db` | `data/sandbox/<test_run>.db` (discarded) | `data/live/webull/state.db` on the LIVE host |
-| Credentials | none | data-source key | public sandbox test keys (env variables) | Webull production App Key/Secret + token, LIVE host only |
+| Credentials | none | data-source key; data-repository token | public sandbox test keys (env variables) | Webull production App Key/Secret + token (LIVE host only); data-repository token |
 | Capital | config | virtual capital (¥50,000 equivalent by default) | n/a | real balance, capped by the approved capital (¥50,000 start, ¥100,000 hard cap) |
-| Who may run it | anyone (CI included) | the PAPER host | the operator, on request (Q10) | the LIVE host only, after approval |
+| Who may run it | anyone (CI included) | the PAPER host | the operator, once the design is approved (Q10 decided) | the LIVE host only, after approval |
 
 ## 3. Enumerations
 
@@ -123,5 +123,5 @@ Durations are minimums. Promotion is never automatic.
 
 1. `aitrader backtest --config config/backtest.yaml` — no credentials (Phase 1).
 2. `aitrader paper` — PAPER virtual portfolio; needs the data-source key (Phase 3).
-3. `aitrader broker-test --target webull-sandbox` — adapter contract tests against the sandbox (after approval Q10).
+3. `aitrader broker-test --target webull-sandbox` — adapter contract tests against the sandbox (allowed once the design is approved, Q10).
 4. `aitrader live` — only on the LIVE host; refuses to run unless LiveGuard passes. Until approval its configuration does not exist, so it always refuses.
