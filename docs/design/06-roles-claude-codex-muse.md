@@ -2,6 +2,8 @@
 
 ## 1. Who does what
 
+> **Current phase (owner instruction, 2026-10-23):** Claude implements product and test code until the owner switches to Codex. Until then the Codex loop below is not active, and the rules for the implementer apply to Claude. When the owner switches, `AGENTS.md` and `.ai/CURRENT_TASK.md` are created and the table applies as written.
+
 | Role | Actor | Responsibilities | Not allowed |
 |---|---|---|---|
 | Owner | You | Approve design, phases, sign-ups, spending, LIVE activation and limit changes; receive critical alerts; handle broker accounts and real credentials. | — |

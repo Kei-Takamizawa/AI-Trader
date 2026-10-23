@@ -1,0 +1,10 @@
+# PAPER: our own virtual portfolio on live market data. The simulator fills the orders.
+# Needs AITRADER_DATA_API_KEY / AITRADER_DATA_API_SECRET (read-only data source, decision Q2).
+mode: paper
+broker_environment: sim
+
+paper:
+  virtual_capital_jpy: 50000
+
+data:
+  provider: alpaca

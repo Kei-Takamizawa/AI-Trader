@@ -1,0 +1,13 @@
+# TEMPLATE ONLY. LIVE is disabled in this build and this file is never loaded.
+#
+# A real LIVE configuration exists only on the LIVE host, outside git, after the owner's
+# explicit written approval (docs/design/04-mode-switching.md, LiveGuard gates G1-G7).
+# Webull production credentials are never written to any file in this repository; on the LIVE
+# host they come from the LIVE secret store.
+mode: live
+broker_environment: webull_live
+
+risk:
+  approved_capital_jpy: 50000
+  live_max_order_notional_jpy: 30000
+  live_max_total_holdings_jpy: 100000

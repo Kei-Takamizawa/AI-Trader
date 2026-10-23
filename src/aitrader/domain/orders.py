@@ -1,0 +1,85 @@
+"""Order intents produced by strategies and the risk engine's decisions about them."""
+
+from typing import Self
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from aitrader.domain.enums import Side, Verdict
+from aitrader.domain.market import Symbol
+from aitrader.domain.money import Currency, Money
+from aitrader.domain.types import NonNegativeDecimal, PositiveDecimal, UtcDatetime
+
+
+class OrderIntent(BaseModel):
+    """What a strategy wants to do. The risk engine decides the final quantity.
+
+    Exactly one sizing basis is given: ``target_notional`` (amount of money) or
+    ``target_quantity`` (number of shares). Entries (BUY) must carry a stop price.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    intent_id: str = Field(min_length=1)
+    strategy_id: str = Field(min_length=1)
+    strategy_version: str = Field(min_length=1)
+    symbol: Symbol
+    side: Side
+    target_notional: Money | None = None
+    target_quantity: PositiveDecimal | None = None
+    limit_price: PositiveDecimal | None = None
+    stop_price: PositiveDecimal | None = None
+    reason: str = Field(min_length=1)
+    signal_ts: UtcDatetime
+    advisory_ids: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def _check(self) -> Self:
+        if (self.target_notional is None) == (self.target_quantity is None):
+            raise ValueError("give exactly one of target_notional and target_quantity")
+        if self.target_notional is not None:
+            if self.target_notional.currency is not Currency.USD:
+                raise ValueError("target_notional must be in USD")
+            if self.target_notional.amount <= 0:
+                raise ValueError("target_notional must be greater than zero")
+        if self.side is Side.BUY:
+            if self.stop_price is None:
+                raise ValueError("entries (BUY) must carry a stop price")
+            if self.limit_price is not None and self.stop_price >= self.limit_price:
+                raise ValueError("stop price of a BUY must be below its limit price")
+        return self
+
+
+class RuleResult(BaseModel):
+    """The outcome of one risk rule, with the numbers it used (for the audit trail)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    rule_id: str = Field(min_length=1)
+    passed: bool
+    detail: str = ""
+    values: dict[str, str] = Field(default_factory=dict)
+
+
+class RiskDecision(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    intent_id: str = Field(min_length=1)
+    verdict: Verdict
+    approved_quantity: NonNegativeDecimal
+    rule_results: tuple[RuleResult, ...]
+    limits_hash: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _check(self) -> Self:
+        failed = [r for r in self.rule_results if not r.passed]
+        if self.verdict is Verdict.REJECT:
+            if self.approved_quantity != 0:
+                raise ValueError("a rejected intent must have approved_quantity 0")
+            if not failed:
+                raise ValueError("a rejection must name at least one failed rule")
+        else:
+            if self.approved_quantity <= 0:
+                raise ValueError("an approved or reduced intent needs a positive quantity")
+            if self.verdict is Verdict.APPROVE and failed:
+                raise ValueError("APPROVE is not allowed when a rule failed; use REDUCE or REJECT")
+        return self

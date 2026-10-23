@@ -1,0 +1,11 @@
+# BACKTEST: historical replay with the simulator. No credentials needed.
+mode: backtest
+broker_environment: sim
+
+backtest:
+  start: 2016-01-04
+  end: 2024-12-31
+  initial_capital_usd: 323         # about JPY 50,000 at USD/JPY 155 (assumption)
+
+data:
+  provider: csv

@@ -26,6 +26,10 @@ Start with the [design package overview](docs/design/README.md). It lists the do
 ## Who works on it
 
 - **Owner:** approves every important step (design, sign-ups, spending, real money).
-- **Claude:** architecture, strategy research, task specifications, reviews.
-- **Codex:** implementation and automated tests.
+- **Claude:** architecture, strategy research, reviews — and, for now, implementation and tests.
+- **Codex:** takes over implementation when the owner switches to it.
 - **Muse (Meta AI):** planned later as a read-only operations assistant, if its availability and terms fit.
+
+## For developers
+
+See [docs/dev/setup.md](docs/dev/setup.md). Development and tests need no accounts or API keys.

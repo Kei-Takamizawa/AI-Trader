@@ -60,7 +60,7 @@
 
 | ID | Topic | Decision |
 |----|-------|----------|
-| Q1 | Approve the design | **Open.** The owner will read v0.3 first. `CLAUDE.md`, `AGENTS.md` and `.ai/CURRENT_TASK.md` are created only after approval. |
+| Q1 | Approve the design | **Approved** (owner instruction "続けてください", 2026-10-23). Implementation starts with TASK-001. **Until the owner says otherwise, Claude implements** instead of Codex; `AGENTS.md` and `.ai/CURRENT_TASK.md` are created only when the owner switches to Codex. |
 | Q2 | Market data for BACKTEST and PAPER | Free Alpaca paper-only account, used **only** as a read-only data source. The owner signs up when Phase 2 starts. |
 | Q3 | Where the system runs | Google Cloud for both PAPER and LIVE, in separate projects. The owner's always-on home PC is used for development and BACKTEST only. Projects are created when Phase 3 (PAPER) and Phase 7 (LIVE) start, each with a separate approval. |
 | Q4 | Critical-alert channels | Email + ntfy (push). |

@@ -1,0 +1,184 @@
+[project]
+name = "aitrader"
+version = "0.1.0"
+description = "Risk-first automated trading system for US stocks and ETFs (BACKTEST / PAPER / LIVE)."
+readme = "README.md"
+requires-python = ">=3.14,<3.15"
+dependencies = [
+    "pydantic>=2.14,<3",
+    "pydantic-settings>=2.6,<3",
+    "pyyaml>=6.0,<7",
+    "typer>=0.27,<1",
+]
+
+[project.scripts]
+aitrader = "aitrader.cli.main:app"
+
+[dependency-groups]
+dev = [
+    "hypothesis>=6.120",
+    "import-linter>=2.1",
+    "mypy>=1.13",
+    "pytest>=8.3",
+    "pytest-cov>=6.0",
+    "ruff>=0.8",
+    "time-machine>=2.16",
+    "types-pyyaml>=6.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.0,<0.12"]
+build-backend = "uv_build"
+
+# ---------------------------------------------------------------- ruff
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+src = ["src", "tests"]
+# Code examples in design documents are illustrations, not code to lint or reformat.
+extend-exclude = ["docs", "*.md"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "N", "TID", "DTZ", "S", "PT"]
+ignore = [
+    "RUF001", # ambiguous unicode in strings (Japanese text is intended)
+    "RUF002",
+    "RUF003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# The clock package is the only place allowed to read the system clock.
+"src/aitrader/clock/*.py" = ["TID251", "DTZ005"]
+"tests/**/*.py" = ["S101", "S603", "S607"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"datetime.datetime.now".msg = "Use aitrader.clock (Clock.now()) instead of reading the system clock."
+"datetime.datetime.utcnow".msg = "Use aitrader.clock (Clock.now()) instead of reading the system clock."
+"datetime.date.today".msg = "Use aitrader.clock (Clock.now()) instead of reading the system clock."
+"time.time".msg = "Use aitrader.clock (Clock.now()) instead of reading the system clock."
+
+# ---------------------------------------------------------------- mypy
+[tool.mypy]
+python_version = "3.14"
+files = ["src", "tests"]
+strict = true
+plugins = ["pydantic.mypy"]
+warn_unreachable = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_decorators = false
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
+# ---------------------------------------------------------------- pytest / coverage
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers --strict-config"
+xfail_strict = true
+
+[tool.coverage.run]
+source = ["aitrader"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+
+# ---------------------------------------------------------------- import-linter
+[tool.importlinter]
+root_package = "aitrader"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Risk, execution, broker, portfolio and reconcile never import the AI package"
+type = "forbidden"
+source_modules = [
+    "aitrader.risk",
+    "aitrader.execution",
+    "aitrader.broker",
+    "aitrader.portfolio",
+    "aitrader.reconcile",
+]
+forbidden_modules = ["aitrader.ai"]
+
+[[tool.importlinter.contracts]]
+name = "Strategy imports only the domain package"
+type = "forbidden"
+source_modules = ["aitrader.strategy"]
+forbidden_modules = [
+    "aitrader.ai",
+    "aitrader.app",
+    "aitrader.backtest",
+    "aitrader.broker",
+    "aitrader.cli",
+    "aitrader.clock",
+    "aitrader.config",
+    "aitrader.data",
+    "aitrader.execution",
+    "aitrader.metrics",
+    "aitrader.news",
+    "aitrader.notify",
+    "aitrader.ops",
+    "aitrader.portfolio",
+    "aitrader.reconcile",
+    "aitrader.risk",
+    "aitrader.storage",
+]
+
+[[tool.importlinter.contracts]]
+name = "Only aitrader.broker.webull may import the Webull SDK"
+type = "forbidden"
+source_modules = [
+    "aitrader.ai",
+    "aitrader.app",
+    "aitrader.backtest",
+    "aitrader.cli",
+    "aitrader.clock",
+    "aitrader.config",
+    "aitrader.data",
+    "aitrader.domain",
+    "aitrader.execution",
+    "aitrader.metrics",
+    "aitrader.news",
+    "aitrader.notify",
+    "aitrader.ops",
+    "aitrader.portfolio",
+    "aitrader.reconcile",
+    "aitrader.risk",
+    "aitrader.storage",
+    "aitrader.strategy",
+]
+forbidden_modules = ["webull"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "The domain package depends on nothing else in aitrader"
+type = "forbidden"
+source_modules = ["aitrader.domain"]
+forbidden_modules = [
+    "aitrader.ai",
+    "aitrader.app",
+    "aitrader.backtest",
+    "aitrader.broker",
+    "aitrader.cli",
+    "aitrader.clock",
+    "aitrader.config",
+    "aitrader.data",
+    "aitrader.execution",
+    "aitrader.metrics",
+    "aitrader.news",
+    "aitrader.notify",
+    "aitrader.ops",
+    "aitrader.portfolio",
+    "aitrader.reconcile",
+    "aitrader.risk",
+    "aitrader.storage",
+    "aitrader.strategy",
+]

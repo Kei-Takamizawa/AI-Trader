@@ -1,6 +1,6 @@
 # 10. First Development Task for Codex (draft)
 
-> **Status: draft.** After the owner approves the design, this content becomes `.ai/CURRENT_TASK.md` on a cycle branch, together with `CLAUDE.md` and `AGENTS.md`. Until then Codex must not start it.
+> **Status: in progress — implementer Claude** (design approved 2026-10-23; the owner asked Claude to implement until switching to Codex). When Codex takes over, later tasks are issued through `.ai/CURRENT_TASK.md`.
 
 ---
 
