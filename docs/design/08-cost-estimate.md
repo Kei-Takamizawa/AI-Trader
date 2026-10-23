@@ -7,9 +7,10 @@ All figures are estimates. USD/JPY = 155 [A]. Prices checked 2026-10-23 unless m
 | Item | Cost | Note |
 |---|---|---|
 | Design and development | ¥0 extra | Uses existing Claude/Codex subscriptions |
-| Alpaca paper-only account | ¥0 | Email sign-up [V] (needs approval Q2) |
+| Read-only data source (Alpaca paper-only account) | ¥0 | Email sign-up [V] (needs approval Q2) |
 | Cloud project set-up | ¥0 | A billing account (card) is required even for the free tier [U for exact steps] (needs approval Q3) |
-| Broker account opening (Phase 6) | ¥0 [U] | Account opening fees not observed for the shortlisted brokers; confirm at opening |
+| Webull account opening and OpenAPI application (Phase 6) | ¥0 | Account opening/maintenance and API use are free [V] |
+| Initial JPY→USD conversion of ¥50,000 | ≈ ¥48 | JPY 0.15 per USD [V]; ≈ ¥96 for ¥100,000 |
 | Initial live capital (Phase 7) | ¥50,000 (cap ¥100,000) | This is capital, not a cost |
 
 ## 2. Monthly running costs
@@ -30,7 +31,8 @@ All figures are estimates. USD/JPY = 155 [A]. Prices checked 2026-10-23 unless m
 | Item | Cost | Note |
 |---|---|---|
 | Alpaca Basic data (IEX real-time, consolidated history > 15 min old) | USD 0 [V] | Enough for daily-bar strategies |
-| Broker data in LIVE | USD 0 for Webull JP Nasdaq Basic via OpenAPI [V]; IBSJ free Cboe One + IEX [V] | Consolidated feeds cost extra (IBSJ USD 10 + 4.50; Alpaca SIP USD 99) — not needed now |
+| Webull data in LIVE | USD 0: Nasdaq Basic via a (free) OpenAPI market data subscription [V] | TotalView and other advanced data are paid [U price] — not needed |
+| Static IP for the Webull IP allow-list (LIVE VM) | a few USD/month [U] | Only for the LIVE project |
 | News / filings / macro | USD 0 (SEC EDGAR, FRED; Alpaca news if free) [U] | Paid news is not justified at this capital |
 
 ### 2.3 AI (LLM) costs
@@ -77,9 +79,20 @@ Conclusions:
 2. The small live phase is therefore a **technical and execution-quality test**. Its success criteria are correct execution, clean reconciliation and realistic costs — not profit.
 3. To keep costs low in LIVE_MICRO: free-tier VM, daily-bar cadence, batch AI calls, and the AI overlay only if P4 shows it is worth its cost.
 
+## 3a. Trading costs at Webull (recorded as trading P&L, not operating cost)
+
+| Cost | Amount [V] | Per ¥50,000 account, typical month [A] |
+|---|---|---|
+| Commission | 0 | 0 |
+| CAT fee | USD 0.000003 per share, buys and sells | ≈ 0 |
+| FINRA fee | USD 0.000195 per share sold; min USD 0.01, max USD 9.79 per trade; whole and fractional parts charged separately | ≈ USD 0.02–0.03 per sale; ≈ USD 0.1–0.3/month at 4–10 sales |
+| SEC fee | USD 0.0000206 per USD sold, rounded up to the cent | ≈ USD 0.01 per sale |
+| FX spread | JPY 0.15 per USD per conversion | ≈ ¥48 per ¥50,000 converted (one-off when funding; again when withdrawing) |
+| JPY withdrawal | ¥110 (MUFG) / ¥330 / ¥440 | only when money is taken out |
+
 ## 4. How costs are recorded
 
-- Trading P&L (prices, commissions, regulatory fees, FX, dividends) is recorded in the ledger's trading accounts.
+- Trading P&L (prices, commissions, regulatory fees, FX, dividends) is recorded in the ledger's trading accounts. Each fee is its own row in `trade_costs` (taken from Webull's per-order `commission` and `fees[]` breakdown when available, otherwise estimated by the `webull_jp` cost model and marked as estimated); each JPY⇄USD conversion is a row in `fx_conversions` with the applied rate, the reference rate and the spread cost.
 - Operating costs go to a separate `operating_costs` table with categories **AI**, **SERVER**, **DATA**, **OTHER**:
   - AI: computed per call from the API's reported token usage and the price table in config; reconciled monthly with the provider invoice.
   - SERVER and DATA: monthly invoice amounts entered by the operator (or imported from billing exports), allocated per day.

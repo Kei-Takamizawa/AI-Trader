@@ -30,11 +30,13 @@ PAPER uses the same values as the first LIVE stage, so paper evidence is represe
 | R-ORD-2 | Order size vs. 20-day average daily volume | ≤ 0.1% | 1% |
 | R-LIVE-1 | Maximum order notional (LIVE_MICRO) | ¥30,000 equivalent | ¥50,000 |
 | R-LIVE-2 | Maximum total holdings (LIVE_MICRO) | ¥100,000 equivalent | ¥100,000 |
+| R-LIVE-3 | Capital used for sizing = min(actual equity, approved capital) | approved capital ¥50,000 | ¥100,000 |
 | R-INST-1 | Instruments | Allow-listed symbols only; price ≥ USD 5; ETF average daily dollar volume ≥ USD 20M | allow-list mandatory |
 | R-INST-2 | Prohibited | Short selling, margin, options, leveraged/inverse ETFs, OTC, extended-hours trading | always |
 | R-EVT-1 | Earnings blackout (single stocks) | No new entry from 2 trading days before to 1 day after earnings | — |
 | R-ECON-1 | Cost efficiency | Expected round-trip cost ≤ 20% of the trade's risk budget | — |
-| R-ECON-2 | Minimum order | Quantity ≥ broker increment and value ≥ broker minimum; **never round up** | — |
+| R-ECON-2 | Minimum order | Quantity ≥ broker increment and value ≥ broker minimum; **never round up**. Webull fractional: buy ≥ USD 1, quantity step 0.00001; non-`fractionable` instruments: whole shares | — |
+| R-ECON-3 | Cash currency | Buys use **USD cash only**; an order that would need an implicit JPY→USD conversion is rejected | always |
 
 Raising any value requires a config change (visible through the config hash). Raising a hard cap requires a code change, review and owner approval.
 
@@ -101,7 +103,7 @@ These react to news shocks even when the AI service is down or late, because the
 | ID | Rule |
 |---|---|
 | DUP-1 | `intent_id` is deterministic (strategy, version, symbol, side, signal timestamp, sequence). A unique index allows only one active order per intent. |
-| DUP-2 | `client_order_id` is derived from `intent_id` and an attempt number. A new attempt is allowed only after the previous one is confirmed absent at the broker; at most one retry per intent. |
+| DUP-2 | `client_order_id` is derived from `intent_id` and an attempt number. A new attempt is allowed only after the previous one is confirmed absent at the broker; at most one retry per intent. Format fits Webull's rule (≤ 32 characters, letters, digits, `-`, `_`): 26-character base32 hash + `-` + attempt, e.g. `K3F9...Q2-1`. The SDK's own retries are never relied on for order submission. |
 | DUP-3 | Before submitting, check open orders and positions: no second open entry order for the same symbol and side; caps are evaluated as if all open orders fill. |
 | DUP-4 | At most 2 non-protective orders per symbol per day. |
 | DUP-5 | Single instance: a file lock plus a database lease per mode and account. A second engine refuses to start. |
@@ -143,13 +145,15 @@ Halt states are stored in the database and **survive restarts**.
 | CONN-3 | Reconnect | Reconcile before leaving DEGRADED |
 | CONN-4 | Market data stream down | Handled by DQ-1 |
 | CONN-5 | LLM API down | Strategy runs without AI overlay (see document 11); warning alert if repeated |
+| CONN-6 | Webull order-event stream (gRPC) reports `AuthError`, `NumOfConnExceed` or `SubscribeExpired`, or no `Ping` for 2 minutes | DEGRADED; switch to polling order detail (within the 2-per-2-seconds limit); reconnect with backoff |
+| CONN-7 | Webull MQTT market data disconnected | Reconnect with a new session ID, **re-subscribe** (not automatic), DQ-1 blocks entries meanwhile |
 
 ## 9. Stop orders and their limits
 
 | ID | Rule |
 |---|---|
 | STOP-1 | Every entry intent must carry a stop price. Sizing uses it. |
-| STOP-2 | After an entry fills, place a protective stop **at the broker** (GTC) if the broker supports it for that position type. Otherwise the engine runs a **system-side stop** checked every minute in regular hours, which sends a marketable limit order. |
+| STOP-2 | After an entry fills, place a protective stop **at the broker** (GTC) if the broker supports it for that position type. Otherwise the engine runs a **system-side stop** checked every minute in regular hours, which sends a marketable limit order. At Webull, fractional orders are documented as market/limit only, so positions in a ¥50,000–100,000 account (almost always fractional) use **system-side stops**; broker-side stops are used only for whole-share positions once verified (document 14, WB-5). |
 | STOP-3 | Stops are only ever tightened (e.g. trailing rules), never widened automatically. |
 | STOP-4 | If placing a broker-side stop fails twice: switch to the system-side stop, block new entries, alert. |
 | STOP-5 | Known limits, documented in reports: overnight gaps fill below the stop; stop-limit orders may not fill; fractional positions often cannot carry stop orders; system-side stops need the engine to be alive (hence the watchdog). Backtests model gap fills at the open. |
@@ -197,6 +201,8 @@ Reconciliation also runs after every reconnect, every 15 minutes in market hours
 | HC-7 | Regular trading hours only. |
 | HC-8 | Every order references an approved `RiskDecision` for the same intent and quantity. |
 | HC-9 | Kill switch not set; system state allows the order type. |
+| HC-10 | Webull fields fixed by the gate: `side` ∈ {BUY, SELL} (`SHORT` rejected), `instrument_type = EQUITY`, `market = US`, `combo_type = NORMAL`, `support_trading_session = CORE`, no `margin_type`/`position_intent`, account type `CASH`, `account_tax_type` from approved config. |
+| HC-11 | Sizing never uses more than the approved capital (R-LIVE-3), whatever the account balance. |
 
 ## 14. How AI interacts with risk
 
@@ -208,5 +214,40 @@ Reconciliation also runs after every reconnect, every 15 minutes in market hours
 
 - Every rule ID has unit tests at, just below and just above its threshold.
 - Property tests (hypothesis): no approved order ever breaks a hard cap; fees are always inside the risk budget; ledger always balances; a SELL never exceeds holdings.
-- Fault-injection tests: crash between write-ahead record and broker call; broker timeout after accepting an order; duplicate fill events; stale quotes; malformed broker responses; clock jumps; database locked; kill switch during an open order.
-- These tests are part of LiveGuard gate G5.
+- Fault-injection tests: crash between write-ahead record and broker call; broker timeout after accepting an order; duplicate fill events; stale quotes; malformed broker responses; clock jumps; database locked; kill switch during an open order; token turning `INVALID`; 401/403 responses; event-stream `AuthError`; a run of order rejections.
+- These tests are part of LiveGuard gate G6.
+
+## 16. Stop rules for authentication, data delay and order errors
+
+These rules implement the requirement "stop new trading on API authentication expiry, data delay and order errors". All of them **stop new entries only**; exits, protective stops and cancels continue where possible. Each sets a system state (section 7) and raises an alert. When authentication itself has failed, API exits are impossible as well (including system-side stops); the CRITICAL alert then asks the owner to manage open positions in the Webull app (runbook RB-06) until RB-11 is done. Early expiry warnings (AUTH-2, AUTH-3) exist to make this case rare.
+
+### 16.1 Authentication (Webull)
+
+| ID | Condition | State | Clears when |
+|---|---|---|---|
+| AUTH-1 | 2FA token status is not `NORMAL` (`PENDING`, `INVALID`, `EXPIRED`), or Check Token fails | HALTED | Owner re-creates and confirms the token (runbook RB-11), then a clean reconciliation |
+| AUTH-2 | Token `expires_at` less than 24 hours away | HALTED for new entries; HIGH alert from 72 hours before | Token refreshed or re-created |
+| AUTH-3 | App Key expiry date (recorded by the owner) is unknown or less than 3 days away; warnings at 14, 7 and 3 days | HALTED for new entries | Owner resets/extends the key and updates the record |
+| AUTH-4 | Any `401`, `403`, `INVALID_TOKEN` or event-stream `AuthError` on a trading endpoint | HALTED immediately; no automatic retry loop | Cause identified (signature, token, key) and AUTH-1 to AUTH-3 pass |
+| AUTH-5 | Token keep-alive: no successful authenticated call in 24 hours (risk of the 15-day inactivity rule) | Warning; the engine makes a read-only call daily | — |
+
+### 16.2 Data delay
+
+| ID | Condition | State |
+|---|---|---|
+| DATA-1 | DQ-1 freshness fails for the symbol (quote older than 15 s at order time) | No new entries in that symbol |
+| DATA-2 | DQ-1 fails for more than 25% of the universe, or the market-data stream is down for more than 60 s in market hours | DEGRADED (no new entries at all) |
+| DATA-3 | Market data returns `403` (subscription missing or lapsed) | HALTED; alert owner to check the OpenAPI data subscription |
+| DATA-4 | Bars returned with the "delayed permission" offset when real-time is expected | DEGRADED; alert |
+
+### 16.3 Order errors
+
+| ID | Condition | State |
+|---|---|---|
+| ORD-ERR-1 | One order rejected with a business error (HTTP 417, `PLACE_FAILED`) | That intent is dropped (no blind resubmission); WARNING |
+| ORD-ERR-2 | Two rejections in one session, or any rejection whose code is not in the known-codes table | HALTED for new entries until reviewed |
+| ORD-ERR-3 | `500`/`5xx` or timeout on place/replace/cancel | Order goes to `UNKNOWN`; DEGRADED until resolved by `client_order_id` lookup |
+| ORD-ERR-4 | A fill, position or fee that does not match the order record (e.g. quantity above the order, unexpected symbol) | HALTED; reconciliation; CRITICAL alert |
+| ORD-ERR-5 | Webull rate-limit response (`TOO_MANY_REQUESTS`) | Back off; if repeated within 5 minutes, DEGRADED |
+
+The known-codes table maps Webull error codes (filled in from sandbox tests SB-2) to actions. Unknown codes are always treated as ORD-ERR-2.

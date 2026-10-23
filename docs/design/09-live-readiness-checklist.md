@@ -16,6 +16,10 @@ LIVE stays disabled until **every** item is checked and the owner signs the appr
 - [ ] B3. Account is a **cash** account (no margin, no options permission).
 - [ ] B4. Owner can log in to the broker app to cancel orders manually (runbook tested).
 - [ ] B5. Broker's minimum order size, quantity increment and fee schedule are entered in config and match a test order in the broker's test environment.
+- [ ] B6. Webull: OpenAPI application approved; OpenAPI market data subscription (Nasdaq Basic) active; answers to WB-1 to WB-8 (document 14 §8) recorded.
+- [ ] B7. Webull: account type `CASH`; tax type (`SPECIFIC` or `GENERAL`) chosen (Q9) and set in config.
+- [ ] B8. Webull: JPY converted to USD once by the owner; the conversion and its spread are recorded in `fx_conversions`; risk engine uses USD cash only.
+- [ ] B9. Webull: allow-listed instruments are `fractionable` and tradable (`OC`) on the day of go-live.
 
 ## C. Credentials and environment
 
@@ -24,16 +28,21 @@ LIVE stays disabled until **every** item is checked and the owner signs the appr
 - [ ] C3. Endpoint allow-list and account-ID hash configured; LiveGuard G4 tested with a wrong account (must refuse).
 - [ ] C4. No inbound internet access to the live VM; SSH only through the private tunnel; MFA on the cloud and broker accounts.
 - [ ] C5. Backups encrypted and restore tested.
+- [ ] C6. Webull production App Key/Secret generated **by the owner** (SMS + trading password), stored only in the LIVE secret store; key expiry date recorded; reminders configured.
+- [ ] C7. Webull 2FA decision applied (Q8); if enabled, token created and confirmed by the owner on the LIVE host; token directory 0700 outside the repository.
+- [ ] C8. Webull IP allow-list set to the LIVE VM's static IP (WB-3).
+- [ ] C9. No Webull production credential exists in any development environment, CI secret, PAPER host or AI tool configuration (Webull MCP/CLI/Skills not connected to the production account).
 
 ## D. Code and automated tests
 
 - [ ] D1. The release commit is tagged; CI is green for the full suite (unit, property, integration, fault).
 - [ ] D2. Import rules pass (risk/execution/broker do not import AI).
-- [ ] D3. Parity test passes (PAPER_SIM day replayed in BACKTEST gives identical intents).
+- [ ] D3. Parity test passes (PAPER day replayed in BACKTEST gives identical intents).
 - [ ] D4. The live broker adapter passes its integration tests against the broker's test environment.
 - [ ] D5. No open critical or high review findings.
+- [ ] D6. Webull Sandbox contract tests pass with the exact SDK version pinned for the release.
 
-## E. Fault tests (performed on the PAPER_BROKER and pre-live environments)
+## E. Fault tests (performed in PAPER and, for broker behaviour, against the Webull Sandbox)
 
 - [ ] E1. Process killed between write-ahead record and broker call → recovery finds or rules out the order; no duplicate.
 - [ ] E2. Process killed with open orders and positions → SAFE mode reconciles correctly.
@@ -44,10 +53,12 @@ LIVE stays disabled until **every** item is checked and the owner signs the appr
 - [ ] E7. Watchdog alert when heartbeat stops (VM stopped) → received on both channels.
 - [ ] E8. Clock drift simulation → refuses to trade.
 - [ ] E9. Restore from backup on a fresh VM → state matches broker after reconciliation.
+- [ ] E10. Authentication failures (token `INVALID`, 401/403, event-stream `AuthError`, key expiry inside 3 days) → new entries stop (AUTH-1 to AUTH-4).
+- [ ] E11. A run of order rejections and an unknown error code → new entries stop (ORD-ERR-1, ORD-ERR-2).
 
 ## F. Risk configuration
 
-- [ ] F1. Live limits file within hard caps: max order ≤ ¥30,000 equivalent (hard cap ¥50,000), total holdings ≤ ¥100,000, per-trade risk ≤ 0.5% including fees, daily 1.5%, monthly 5%, drawdown 10%.
+- [ ] F1. Live limits file within hard caps: approved capital ¥50,000 (hard cap ¥100,000), max order ≤ ¥30,000 equivalent (hard cap ¥50,000), total holdings ≤ ¥100,000, per-trade risk ≤ 0.5% including fees, daily 1.5%, monthly 5%, drawdown 10%.
 - [ ] F2. Allow-list of instruments reviewed (liquid ETFs first).
 - [ ] F3. Monthly-halt resumption policy set (Q5).
 - [ ] F4. Stop-order handling for the broker confirmed (broker-side or system-side) and tested.

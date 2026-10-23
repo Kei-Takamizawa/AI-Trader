@@ -38,11 +38,12 @@ Window lengths are [A] and can be adjusted in research, but must be declared bef
 
 | Model | Default | Notes |
 |---|---|---|
-| Commission | Per broker profile (document 02): Webull JP 0; moomoo JP 0.132% (cap USD 22); IBSJ Fixed / Tiered with minimums and 1% cap | Always applied; the report shows results under **each** candidate broker profile |
-| Regulatory fees | SEC fee on sales (rate as published by the broker) and FINRA TAF per share sold | Small but modelled |
-| FX | Per broker profile; zero per trade if USD is held, charged on deposits/withdrawals | — |
+| Commission | Default profile `webull_jp`: 0. Alternative profiles for comparison: moomoo JP 0.132% (cap USD 22); IBSJ Fixed / Tiered with minimums and 1% cap | Always applied; the report shows `webull_jp` first and the others for robustness |
+| Regulatory fees | `webull_jp`: CAT USD 0.000003/share both sides; FINRA USD 0.000195/share sold (min 0.01, max 9.79, whole and fractional parts separately); SEC USD 0.0000206 per USD sold, rounded up to the cent | Small but modelled |
+| FX | `webull_jp`: JPY 0.15 per USD per conversion; zero per trade when USD is held, charged on deposits/withdrawals | — |
+| Fractional rules | `webull_jp`: regular hours only; buy ≥ USD 1; quantity step 0.00001; marketable limits only; no broker-side stops (system-side stop model) | — |
 | Spread | Half-spread per side: 1–2 bp for the most liquid ETFs, larger for others (estimated from quote data where available) | Configurable per symbol |
-| Slippage | 5 bp per side by default plus a volatility term (k × ATR fraction) | Calibrated later against PAPER_BROKER fills |
+| Slippage | 5 bp per side by default plus a volatility term (k × ATR fraction) | Calibrated later against LIVE_MICRO fills |
 | Limit orders | Fill only if the day's range crosses the limit; fill price = limit (conservative: no price improvement) | — |
 | Stops and gaps | If the open gaps through the stop, fill at the open (minus slippage), not at the stop | Models the main limitation of stops |
 | Partial fills | Capped participation (≤ 1% of bar volume); remainder cancelled at window end | Rarely binding at this size |
@@ -86,7 +87,7 @@ strategy: {id: S1, version: 1.0.0, params_hash: <sha256>}
 data_snapshot_hash: <sha256>
 ai_replay_store_hash: <sha256 or null>
 period: {start: ..., end: ..., holdout_used: false}
-cost_profile: moomoo_jp_basic
+cost_profile: webull_jp
 random_seed: 12345          # for partial-fill sampling if enabled
 variants_tried_so_far: 7
 ```

@@ -7,8 +7,8 @@ A personal, fully automated trading system for US stocks and ETFs, designed to r
 ## What it will do
 
 - **Test strategies on historical data** (BACKTEST mode) with realistic fees, spreads and slippage.
-- **Trade with virtual money on live market data** (PAPER mode), fully automatically during US market hours.
-- **Later, trade a small amount of real money** (LIVE mode), only after a long checklist is complete and the owner approves. LIVE is switched off by default.
+- **Trade with virtual money on live market data** (PAPER mode), fully automatically during US market hours, in its own virtual portfolio.
+- **Later, trade a small amount of real money** (LIVE mode) through Webull Securities Japan's official API — starting with ¥50,000 and never more than ¥100,000 at first — only after a long checklist is complete and the owner approves. LIVE is switched off by default, and AI assistants never get permission to place real orders.
 - **Use AI to read news, filings and market conditions.** The AI can only make the system more careful (skip or shrink a trade). It can never place or enlarge an order by itself.
 - **Protect capital first.** A separate, rule-based risk program limits the loss per trade, per day and per month, forbids leverage and short selling, and stops new trading automatically when something looks wrong.
 - **Report everything.** Every decision, order, fee and operating cost (AI, server, data) is recorded, and daily and monthly reports are produced automatically.

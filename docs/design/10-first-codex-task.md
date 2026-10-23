@@ -20,21 +20,25 @@ Create the foundation that every later task builds on: a Python package with str
 ### In scope
 
 1. **Project set-up**
-   - `pyproject.toml` managed by `uv`, Python 3.12, `src/` layout, package `aitrader`, lock file committed.
+   - `pyproject.toml` managed by `uv`, `src/` layout, package `aitrader`, lock file committed.
+   - Python version: **3.14 if** a dry-run resolution (`uv pip compile`, not installed into the project) shows that `pandas`, `pyarrow`, `exchange_calendars` and `webull-openapi-python-sdk` all resolve on 3.14; otherwise 3.13. If the Codex environment has no network access, use 3.13, mark the check as "left to operator" and say so in the report. (Background: document 14, U12.)
    - Runtime dependencies (only these): `pydantic` v2, `pydantic-settings`, `pyyaml`, `typer`.
    - Dev dependencies (only these): `pytest`, `pytest-cov`, `hypothesis`, `mypy`, `ruff`, `import-linter`, `time-machine`.
-   - `.gitignore` covering `data/`, `*.db`, `.env*`, `config/live*.yaml` (but **not** `config/live.example.yaml`), caches.
+   - `.gitignore` covering `data/`, `*.db`, `.env*`, `config/live*.yaml` (but **not** `config/live.example.yaml`), `conf/` and `**/token.txt` (Webull SDK token files), caches.
 2. **Package skeleton** for every package in document 03, section 1. Packages not implemented in this task contain only an `__init__.py` with a one-line docstring.
 3. **Domain types** (`aitrader.domain`), immutable pydantic models or frozen dataclasses with validation:
    - `Currency` (USD, JPY) and `Money` (Decimal amount + currency; arithmetic only between equal currencies; no floats accepted).
-   - `Mode` (BACKTEST, PAPER_SIM, PAPER_BROKER, LIVE), `Side`, `OrderType`, `TimeInForce`, `OrderStatus` (all states in document 03 §5), `SystemState` (SAFE, RUNNING, DEGRADED, HALTED, KILLED).
+   - `Mode` (BACKTEST, PAPER, LIVE), `BrokerEnvironment` (SIM, WEBULL_SANDBOX, WEBULL_LIVE) and the allowed combinations from document 04 §3 (`BACKTEST→SIM`, `PAPER→SIM`, `LIVE→WEBULL_LIVE`; `WEBULL_SANDBOX` only for the contract-test command), `Side` (BUY, SELL only), `OrderType`, `TimeInForce`, `OrderStatus` (all states in document 03 §5), `SystemState` (SAFE, RUNNING, DEGRADED, HALTED, KILLED).
    - `Instrument`, `Bar` (rejects high < low, negative volume, non-positive prices, naive datetimes), `Quote`.
    - `OrderIntent`, `RuleResult`, `RiskDecision`, `AdvisorySignal` (`size_multiplier` must be within [0, 1]; `valid_until` > `valid_from`; `veto` boolean).
    - `make_intent_id(...)`: deterministic SHA-256-based ID from strategy ID, version, symbol, side, signal timestamp (UTC) and sequence number.
+   - `make_client_order_id(intent_id, attempt)`: 26-character base32 prefix of the intent hash + `-` + attempt number; always ≤ 32 characters and only `[A-Za-z0-9_-]` (Webull rule, document 05 DUP-2).
+   - Cost record types: `TradeCost` (type ∈ COMMISSION, CAT_FEE, FINRA_FEE, SEC_FEE, ADR_FEE, OTHER; amount; currency; actual or estimated) and `FxConversion` (JPY amount, USD amount, applied rate, reference rate, spread cost).
 4. **Configuration** (`aitrader.config`)
    - Settings schema for `base`, `backtest`, `paper` files; layered loading (base → mode file → environment variables for secrets only).
    - `RiskLimits` model with the initial values from document 05 §1.
-   - `HARD_CAPS` constants from document 05 §1 and §13. Loading a config whose limit exceeds a hard cap raises `ConfigError` naming the field, the value and the cap.
+   - `HARD_CAPS` constants from document 05 §1 and §13 (including approved capital ≤ ¥100,000, order notional ≤ ¥50,000, `SHORT` never allowed, `CORE` session only). Loading a config whose limit exceeds a hard cap raises `ConfigError` naming the field, the value and the cap.
+   - The PAPER and BACKTEST config schemas have **no fields** for Webull production credentials; adding one must fail validation.
    - `config_hash()`: SHA-256 of canonical JSON (sorted keys, Decimal as string) of the **effective non-secret** settings. Secrets are `SecretStr` and excluded from the hash and from any `repr`.
    - Loading `Mode.LIVE` raises `LiveDisabledError("LIVE is disabled in this build")`.
    - Example files: `config/base.yaml`, `config/backtest.yaml`, `config/paper.yaml`, `config/live.example.yaml` (template with comments, values not loadable as LIVE).
@@ -73,6 +77,8 @@ Risk engine logic, ledger, order manager, brokers, market data, backtest loop, A
 | AC8 | An import of `aitrader.ai` from `aitrader.risk` (added in a temporary test fixture or checked via contract test) fails `lint-imports` | test or documented manual check |
 | AC9 | `SimClock` refuses to move backwards; banned-API rule catches `datetime.now` outside `clock` | tests |
 | AC10 | `docs/dev/setup.md` commands reproduce the CI checks locally | report |
+| AC11 | `make_client_order_id` always returns ≤ 32 characters from `[A-Za-z0-9_-]` and is deterministic (property test) | test |
+| AC12 | Only the allowed `Mode`/`BrokerEnvironment` combinations load; PAPER/BACKTEST configs with a Webull production credential field are rejected | tests |
 
 ### Report (`.ai/LAST_REPORT.md`)
 

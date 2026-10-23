@@ -21,7 +21,7 @@ The owner's Mac is not needed for trading. It is only used by the operator (Clau
 JSON Lines, one event per line, UTC timestamps, written to the journal and to rotating files.
 
 ```json
-{"ts":"2026-11-02T14:35:02.120Z","run_id":"paper-...","mode":"PAPER_SIM","level":"INFO",
+{"ts":"2026-11-02T14:35:02.120Z","run_id":"paper-...","mode":"PAPER","broker_env":"SIM","level":"INFO",
  "event":"order.submitted","client_order_id":"S1-...-1","symbol":"XLK","side":"BUY",
  "qty":"0.215","limit":"231.40","intent_id":"...","risk_decision":"APPROVE","git":"abc1234"}
 ```
@@ -70,8 +70,8 @@ Muse reads the bundle or the API (integration levels M1–M3 in document 06, sec
 
 | Severity | Examples | Channels | Expected owner action |
 |---|---|---|---|
-| CRITICAL | Heartbeat missing; HALTED by reconciliation mismatch; unexpected position; kill switch fired; hard-cap violation detected; LIVE start refused | Email + push, repeated every 15 min until acknowledged | Check status; follow runbook; decide on manual action |
-| HIGH | DEGRADED > 10 min; monthly soft limit reached; protective stop could not be placed; AI budget exhausted | Email + push once | Review same day |
+| CRITICAL | Heartbeat missing; HALTED by reconciliation mismatch; unexpected position; kill switch fired; hard-cap violation detected; LIVE start refused; Webull authentication failure (AUTH-1, AUTH-4); market data 403 (DATA-3) | Email + push, repeated every 15 min until acknowledged | Check status; follow runbook; decide on manual action |
+| HIGH | DEGRADED > 10 min; monthly soft limit reached; protective stop could not be placed; AI budget exhausted; Webull token expiring within 72 h; App Key expiring within 14/7/3 days; order errors (ORD-ERR-2) | Email + push once | Review same day |
 | WARNING | AI output invalid; single data-quality failure; order not filled in window | Daily report | Review in the daily report |
 | INFO | Daily and monthly reports | Email | Read when convenient |
 
@@ -102,12 +102,14 @@ Alert rate limiting prevents floods; a CRITICAL alert is never suppressed.
 | RB-08 Monthly or drawdown halt review | R-MONTH-2, R-DD-1 |
 | RB-09 Credential rotation | Scheduled or suspected leak |
 | RB-10 Release and rollback | Every deploy |
+| RB-11 Webull re-authentication (token re-creation with phone confirmation; App Key reset/extension; update expiry record) | AUTH-1 to AUTH-4 |
+| RB-12 Webull SDK upgrade (read changelog, bump pin in a PR, run sandbox contract tests, deploy outside market hours) | New SDK release or API change notice |
 
 ## 8. Routine operations
 
 | When | What |
 |---|---|
-| Every trading day | Automated daily report; owner reads it when convenient |
+| Every trading day | Automated daily report; owner reads it when convenient. LIVE: Webull token status and `expires_at` checked hourly; one read-only authenticated call per day keeps the token from lapsing (15-day inactivity rule) |
 | Weekly (weekend) | Backups verified, OS updates, log rotation, dependency audit report |
-| Monthly | Monthly report; AI and cloud invoices reconciled into `operating_costs`; limit review |
+| Monthly | Monthly report; AI and cloud invoices reconciled into `operating_costs`; Webull statements reconciled against `trade_costs` and `fx_conversions`; Webull API changelog and SDK releases reviewed; limit review |
 | Quarterly | Restore drill; fault drill; review of broker terms and fees |

@@ -60,6 +60,7 @@ These files configure the automated loop. They are **not** created yet, so the l
 
 ## 5. Guardrails for AI coding agents
 
+- **No production order authority, from the start.** Claude (cloud and PC operator) and Codex never receive Webull production App Keys, App Secrets or tokens, and never run code against Webull production endpoints. See section 7.
 - Secrets never enter the repository. A secret-scanning check runs in CI.
 - Codex works only inside the repository folder and the cycle branch.
 - Tests may not be skipped, disabled or weakened to make CI pass; Claude's review checks for this.
@@ -101,3 +102,17 @@ In all levels Muse has **no write path**. If Muse is unavailable, the same analy
 2. Read the API terms: data retention, training use, restrictions on financial content.
 3. Test with synthetic (fake) reports first: quality of Japanese summaries, correctness on known anomalies, hallucination rate, latency, cost.
 4. Decide the level (M1, M2 or M3) with the owner. No real account data is sent before the owner approves.
+
+## 7. Production order authority (Webull)
+
+Rule: **only the LIVE host, after the owner's explicit approval, can send orders to Webull production. No AI agent ever can.**
+
+| Control | How it is enforced |
+|---|---|
+| Who creates production credentials | Only the owner: Webull requires SMS verification **and** the trading password to generate an App Key/Secret (document 14). |
+| Where they live | Only in the LIVE secret store on the LIVE host. Never in the repository, CI secrets, the PAPER host, the owner's PC development folder, or any AI tool configuration. |
+| What developers and agents use | Recorded fixtures, `SimBroker`, and the Webull **Sandbox** with Webull's public shared test keys (read from environment variables, not committed). |
+| Webull's own AI tools | Webull Cloud MCP, local MCP, CLI and Agent Skills are **not connected** to the production account from Claude, Codex or Muse. If read-only access is ever wanted for analysis, it needs a separate owner decision and Webull's read-only toolset; trading toolsets stay disabled. |
+| Code paths | PAPER/BACKTEST configs have no production credential fields; the Webull adapter accepts production hosts only with `AITRADER_ENV=live` and passing LiveGuard (document 04 §6). |
+| Changes that touch LIVE | Protected paths (section 3): owner approval required in the PR; deployment to the LIVE host is done manually by the operator after approval, not by CI. |
+| Detection | Secret scanning in CI; a start-up check on PAPER and development hosts that refuses to run if any `LIVE_*` or Webull production variable is present. |

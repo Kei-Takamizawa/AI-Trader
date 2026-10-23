@@ -37,8 +37,8 @@ flowchart LR
         status["Read-only status export"]
     end
     watchdog["Independent watchdog (separate failure domain)"]
-    broker["Broker API (simulator / paper / live)"]
-    mdata["Market data API"]
+    broker["Broker: SimBroker (BACKTEST, PAPER) / Webull OpenAPI (LIVE, disabled)"]
+    mdata["Market data (read-only source; Webull data in LIVE)"]
     news["News, filings and macro APIs"]
     llm["LLM API (Claude)"]
     notify["Notification channels (email + push)"]
@@ -128,16 +128,18 @@ Rules that the diagram encodes:
 
 ```mermaid
 flowchart LR
-    subgraph gcp_paper["Cloud project: aitrader-paper"]
-        vm1["VM: engine + exporter (systemd)"]
+    subgraph gcp_paper["Cloud project: aitrader-paper (no Webull production keys)"]
+        vm1["VM: engine + virtual portfolio + exporter (systemd)"]
         disk1[("Persistent disk: SQLite, Parquet, logs")]
         vm1 --- disk1
     end
     subgraph gcp_live["Cloud project: aitrader-live (created only after LIVE approval)"]
-        vm2["VM: engine (LIVE build)"]
-        sec2["Secret store: live broker credentials"]
+        vm2["VM: engine (LIVE), static IP on Webull allow-list"]
+        sec2["Secret store: Webull App Key/Secret, token dir"]
         vm2 --- sec2
     end
+    wb["Webull OpenAPI production"]
+    vm2 --> wb
     hc["Heartbeat monitor (SaaS or separate cloud function)"]
     vm1 -- "heartbeat every 60 s" --> hc
     vm2 -- "heartbeat every 60 s" --> hc
@@ -147,7 +149,8 @@ flowchart LR
     vm2 --> backup
 ```
 
-- PAPER and LIVE run in **separate cloud projects**, with separate service accounts and secrets. The paper host never holds live credentials.
+- PAPER and LIVE run in **separate cloud projects**, with separate service accounts and secrets. The paper host never holds live credentials; PAPER's portfolio is our own virtual book, so it needs no broker account at all.
+- The Webull Sandbox is reached only by the adapter contract tests (document 04), never by the PAPER engine.
 - The heartbeat monitor runs outside the trading VM. If the VM, the process or the network dies, the monitor notices the missing heartbeat and alerts.
 - Clock synchronisation (chrony/NTP) is mandatory; time drift is checked at start-up.
 
@@ -203,6 +206,8 @@ sequenceDiagram
 | AI API down, slow or invalid output | Timeout, schema validation | Strategy runs without the AI overlay (rule-based baseline). Alert if repeated. |
 | Market data stale or missing | Freshness and completeness checks | No new entries. Existing protective orders stay. Alert. |
 | Broker API errors or disconnect | Error counters, heartbeat to broker | DEGRADED state: no new entries, retry with backoff, reconcile after reconnect. |
+| Webull authentication expires or fails (token, App Key, 401/403) | Hourly token check, key-expiry record, error mapping | HALTED for new entries; owner re-authenticates (runbook RB-11). |
+| Order rejected or unknown error code | Order events and responses | Drop the intent; after a second rejection or any unknown code, stop new entries (document 05 §16). |
 | Engine process crash | systemd restart; missing heartbeat | Restart into SAFE mode: reconcile before any trading. |
 | Whole VM down | External heartbeat monitor | Alert by email and push. Broker-side stop orders (where supported) keep protecting positions. |
 | Local database corruption | Integrity check at start-up | Refuse to trade; restore from backup; reconcile from broker. |

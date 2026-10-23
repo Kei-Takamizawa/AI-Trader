@@ -25,7 +25,11 @@ AI-Trader/
 │   ├── strategy/               # Strategy interface and implementations
 │   ├── risk/                   # Risk engine, sizing, limits, circuit breakers, halt state
 │   ├── execution/              # Order manager, order state machine, order gate
-│   ├── broker/                 # Broker port and adapters (sim, alpaca_paper, live brokers later)
+│   ├── broker/                 # Broker port and adapters
+│   │   ├── port.py             # BrokerPort, capabilities, domain error types
+│   │   ├── sim/                # SimBroker (BACKTEST, PAPER) with broker cost profiles
+│   │   ├── webull/             # Webull JP adapter: the ONLY place that imports the Webull SDK
+│   │   └── contract_tests/     # Broker-agnostic contract test suite (run against sim and sandbox)
 │   ├── portfolio/              # Ledger: positions, cash by currency, P&L, operating costs
 │   ├── reconcile/              # Local-vs-broker reconciliation
 │   ├── backtest/               # Event loop, fill models, cost models, walk-forward runner
@@ -50,7 +54,7 @@ AI-Trader/
 
 | Package | Responsibility | Must not |
 |---|---|---|
-| `domain` | Immutable types: `Instrument`, `Bar`, `Quote`, `Money` (Decimal + currency), `OrderIntent`, `Order`, `Fill`, `Position`, `AdvisorySignal`, `RiskDecision`, enums (`Mode`, `Side`, `OrderType`, `TimeInForce`, `OrderStatus`, `HaltReason`). | Import anything outside the standard library and pydantic. |
+| `domain` | Immutable types: `Instrument`, `Bar`, `Quote`, `Money` (Decimal + currency), `OrderIntent`, `Order`, `Fill`, `Fee`, `FxConversion`, `Position`, `AdvisorySignal`, `RiskDecision`, enums (`Mode` = BACKTEST/PAPER/LIVE, `BrokerEnvironment` = SIM/WEBULL_SANDBOX/WEBULL_LIVE, `Side`, `OrderType`, `TimeInForce`, `OrderStatus`, `HaltReason`). | Import anything outside the standard library and pydantic. |
 | `config` | Load YAML + environment, validate with pydantic, compute a config hash, enforce **hard caps** (compiled-in ceilings that config cannot exceed). | Read secrets into logs. |
 | `clock` | `Clock` port (`now()`, `sleep_until()`), `SimClock` for backtests, `WallClock` for paper/live, exchange sessions via `exchange_calendars`. | Use `datetime.now()` anywhere else (enforced by lint rule). |
 | `data` | `MarketDataProvider` port; adapters (`csv_replay`, `parquet_store`, `alpaca_data`, later broker data); `DataQualityGate`. | Return data with timestamps later than `clock.now()` (look-ahead guard). |
@@ -59,7 +63,7 @@ AI-Trader/
 | `strategy` | Pure functions: given bars, portfolio snapshot and valid advisory signals, return `OrderIntent`s with reasons. Versioned parameters. | Perform I/O, read the clock directly, or import `ai`. |
 | `risk` | Pre-trade checks, position sizing with fees, portfolio limits, loss limits, circuit breakers, halt state machine. | Import `ai`. Depend on anything non-deterministic. |
 | `execution` | Order manager (idempotent submission, state machine, write-ahead records, cancel/replace, protective stops); `OrderGate` (final hard-cap check). | Import `ai`. Submit without an approved `RiskDecision`. |
-| `broker` | `BrokerPort` and adapters; environment allow-lists (endpoints, account IDs); translate broker errors to domain errors. | Import `ai`. Contain strategy logic. |
+| `broker` | `BrokerPort` and adapters (`sim`, `webull`); environment allow-lists (endpoints, account IDs); translate broker payloads and errors to domain types; broker cost profiles; a broker-agnostic contract test suite. | Import `ai`. Contain strategy logic. Leak SDK types outside the adapter. |
 | `portfolio` | Double-entry ledger: cash per currency (USD, JPY), settled vs unsettled cash, positions, realised/unrealised P&L, fees, FX, dividends, **operating costs in a separate account**. | Mix trading P&L with operating costs. |
 | `reconcile` | Compare local orders/positions/cash with the broker; produce a report; set HALT on mismatch. | Auto-"fix" mismatches silently. |
 | `backtest` | Event loop over historical data with `SimClock`; fill, spread, slippage, partial-fill and fee models; walk-forward orchestration; run manifest. | Use a different strategy or risk code path than paper/live. |
@@ -87,6 +91,7 @@ FORBIDDEN:
   risk, execution, broker, portfolio, reconcile  -X->  ai
   strategy                                       -X->  ai, broker, data adapters, storage
   any package except app and cli                 -X->  concrete adapters of another package
+  any package except aitrader.broker.webull      -X->  webull (the Webull SDK)
 ```
 
 `AdvisorySignal` is a plain domain type. The strategy receives a list of these values; it never calls the AI service.
@@ -181,6 +186,36 @@ Key rules:
 - `UNKNOWN` never leads to an automatic resubmission. The system first asks the broker by `client_order_id`.
 - The same `intent_id` can produce at most one live order at a time (unique index in the database).
 
+## 5a. Webull adapter (`aitrader.broker.webull`)
+
+The adapter is the only code that knows Webull exists. It implements `BrokerPort` using the **official Python SDK** (`webull-openapi-python-sdk`, exact version pinned in the lock file). Replacing Webull with another broker means writing another package that implements the same port and passes the same contract tests.
+
+| Component | Job |
+|---|---|
+| `client.py` | Builds SDK clients (`ApiClient`, `TradeClient`, events client, data client) for one `BrokerEnvironment`; checks hosts against the allow-list; sets the token directory; sets explicit timeouts. |
+| `orders.py` | Maps `OrderRequest` → Webull fields and back (table below); preview before place; submit; replace; cancel; lookup by `client_order_id`. |
+| `events.py` | gRPC order-event listener; heartbeat (`Ping`) watchdog; fallback to polling; maps scene types to order-manager events. |
+| `accounts.py` | Account list (verifies approved account ID and `CASH` type), balances per currency, positions. |
+| `market_data.py` | LIVE only: snapshots, bars and MQTT streaming with re-subscribe on reconnect. |
+| `auth.py` | Token status and `expires_at` checks, App Key expiry tracking, mapping of auth failures to AUTH-* rules. Token **creation** is a separate owner-run CLI command. |
+| `fees.py` | Reads `commission` and `fees[]` from order detail into `trade_costs`; falls back to the `webull_jp` cost model when not yet reported. |
+| `errors.py` | Known error-code table → domain errors and ORD-ERR-* actions; unknown codes → ORD-ERR-2. |
+
+Field mapping for US stock orders:
+
+| Domain field | Webull field | Rule |
+|---|---|---|
+| `client_order_id` | `client_order_id` | ≤ 32 chars, `[A-Za-z0-9_-]` (document 05, DUP-2) |
+| side BUY / SELL | `side` | `SHORT` never sent (HC-10) |
+| order type | `order_type` | `LIMIT` (marketable, with price cap) by default; `MARKET` only for emergency exits; `STOP_LOSS`/`STOP_LOSS_LIMIT` only for whole-share positions once verified |
+| quantity or notional | `entrust_type` + `quantity` or `total_cash_amount` | Fractional buy by amount (`AMOUNT`, ≥ USD 1) or decimal quantity (step 0.00001); whole shares for non-`fractionable` symbols |
+| — | `instrument_type`, `market`, `combo_type` | `EQUITY`, `US`, `NORMAL` |
+| — | `support_trading_session` | `CORE` |
+| time in force | `time_in_force` | `DAY` for entries and exits |
+| — | `account_tax_type` | From approved config (`SPECIFIC` or `GENERAL`) |
+
+Operational rules: SDK retries are not relied on for POST requests; a timeout makes the order `UNKNOWN` and triggers a lookup. The SDK token file lives in a dedicated 0700 directory outside the repository. Sandbox endpoints are accepted only by the contract-test command.
+
 ## 6. Data model (SQLite tables, first version)
 
 | Table | Purpose | Key columns |
@@ -193,7 +228,9 @@ Key rules:
 | `risk_decisions` | Risk verdicts | intent_id, verdict, approved_qty, rule_results_json, limits_hash |
 | `orders` | Order life cycle | client_order_id, intent_id, broker_order_id, status, request_json, updated_at |
 | `order_events` | Append-only order history | client_order_id, ts, event, payload_json |
-| `fills` | Executions | fill_id, client_order_id, qty, price, fee, fee_currency, ts |
+| `fills` | Executions (Webull reports order-level aggregates; partial fills come from events) | fill_id, client_order_id, qty, price, ts, source (event / order-detail / sim) |
+| `trade_costs` | Every trading cost, one row per item | ts, client_order_id, type (COMMISSION, CAT_FEE, FINRA_FEE, SEC_FEE, ADR_FEE, OTHER), amount, currency, actual_or_estimated, source (broker breakdown / cost model) |
+| `fx_conversions` | Every JPY⇄USD conversion | ts, jpy_amount, usd_amount, applied_rate, reference_rate, spread_cost_jpy, source (statement / manual entry) |
 | `positions_snapshots` | End-of-day and on-change snapshots | ts, symbol, qty, avg_cost, market_value |
 | `cash_ledger` | Double-entry cash movements | entry_id, ts, account (CASH_USD, CASH_JPY, FEES, FX, DIVIDENDS, ...), amount, currency, ref |
 | `operating_costs` | AI, server, data, other costs | ts, category (AI / SERVER / DATA / OTHER), provider, amount, currency, ref |

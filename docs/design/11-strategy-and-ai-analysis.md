@@ -56,6 +56,7 @@ Parameters are fixed sets, not optimised per instrument. Walk-forward testing (d
 
 - Decisions use completed daily bars only. Orders are sent in the next session's execution window (09:35–10:30 ET).
 - Entries: limit orders at the current quote plus a small collar (for example the mid-price plus max(one tick, 5 bp)), capped at 1% above the previous close. Not filled by the end of the window → cancelled, no chasing.
+- Webull fractional rules shape this (document 14): fractional orders run only in regular hours, and a fractional buy limit must be strictly **above the best ask** (a sell limit strictly below the best bid). So entries are always *marketable* limits — the limit acts as a price cap, never as a resting bid. Buys by amount (`AMOUNT`) must be at least USD 1.
 - Exits: marketable limit orders; if not filled, retried with a wider collar; exits take priority over entries.
 - Protective stops: see document 05, section 9.
 - Alternative to be tested in research: execution near the close (15:45–15:55 ET) on same-day signals. The default stays next-session execution because it is simpler to reproduce in backtests.

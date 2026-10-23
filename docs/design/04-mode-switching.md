@@ -1,104 +1,127 @@
-# 04. BACKTEST / PAPER / LIVE Switching Design
+# 04. Environment Separation: BACKTEST / PAPER / LIVE (+ Webull Sandbox tests)
 
 ## 1. Principle
 
-The mode decides **which adapters are wired in**. It never changes strategy logic, risk rules or order handling. The composition root (`aitrader.app.build_system`) is the only place that reads the mode.
+There are exactly **three operating environments**. The environment decides **which adapters are wired in**; it never changes strategy logic, risk rules or order handling. The composition root (`aitrader.app.build_system`) is the only place that reads it.
 
-## 2. Mode matrix
+| Environment | Purpose | Broker side | Money |
+|---|---|---|---|
+| **BACKTEST** | Validate strategies on historical data | `SimBroker` with the historical fill model | none |
+| **PAPER** | Run the full system continuously on live market data with a **dedicated virtual portfolio** | `SimBroker` with the live fill model and the Webull cost profile; our ledger is the portfolio | virtual |
+| **LIVE** | Future real-money trading through the Webull production API | `WebullBroker(environment=WEBULL_LIVE)` | real — **disabled** |
 
-| Component | BACKTEST | PAPER_SIM | PAPER_BROKER | LIVE |
+The **Webull Sandbox** is not an operating environment. It is a **test target** for the Webull adapter (connection, signing, order placement/replace/cancel, events, error mapping). It uses Webull's shared public test accounts, whose orders and positions change at any time (document 14), so it never holds a portfolio and its results never enter P&L.
+
+## 2. Wiring matrix
+
+| Component | BACKTEST | PAPER | Sandbox contract tests | LIVE |
 |---|---|---|---|---|
-| Clock | `SimClock` (advances through history) | `WallClock` | `WallClock` | `WallClock` |
-| Market data | Historical Parquet/CSV replay | Live data API | Live data API | Live broker data (or approved feed) |
-| News / filings | Historical store (timestamped) | Live sources | Live sources | Live sources |
-| AI analysis | **Replay** of recorded outputs, or OFF | Live calls (budget-capped) or OFF | Live calls or OFF | Live calls or OFF |
-| Strategy | same | same | same | same |
-| Risk engine | same | same | same | same (LIVE limit file) |
-| Order manager + order gate | same | same | same | same |
-| Broker adapter | `SimBroker` with historical fill model | `SimBroker` with live quotes | Broker paper/test endpoint (e.g. Alpaca paper) | Live broker endpoint |
-| Database | `data/backtest/<run_id>.db` | `data/paper_sim/state.db` | `data/paper_broker/<broker>/state.db` | `data/live/<broker>/state.db` on the live host |
-| Credentials | none | data API key | paper keys | live keys (live host only) |
-| Capital | config | virtual capital cap (same size as planned live) | virtual capital cap (broker paper balance is ignored above the cap) | real balance, capped by live limits |
+| Clock | `SimClock` | `WallClock` | `WallClock` | `WallClock` |
+| Market data | Historical Parquet replay | Read-only data source (proposed: Alpaca data, Q2) | Sandbox endpoints (if available) | Webull production market data |
+| News / filings | Historical, timestamped | Live sources | — | Live sources |
+| AI analysis | Replay of recorded outputs, or OFF | Live (budget-capped) or OFF | — | Live or OFF |
+| Strategy, risk engine, order manager, order gate | same | same | same order manager and gate (strategy not involved) | same (LIVE limit file) |
+| Broker adapter | `SimBroker` | `SimBroker` | `WebullBroker(WEBULL_SANDBOX)` | `WebullBroker(WEBULL_LIVE)` |
+| Cost model | Broker profile (default `webull_jp`) | `webull_jp` | Webull's actual responses | Webull's actual fees |
+| Database | `data/backtest/<run_id>.db` | `data/paper/state.db` | `data/sandbox/<test_run>.db` (discarded) | `data/live/webull/state.db` on the LIVE host |
+| Credentials | none | data-source key | public sandbox test keys (env variables) | Webull production App Key/Secret + token, LIVE host only |
+| Capital | config | virtual capital (¥50,000 equivalent by default) | n/a | real balance, capped by the approved capital (¥50,000 start, ¥100,000 hard cap) |
+| Who may run it | anyone (CI included) | the PAPER host | the operator, on request (Q10) | the LIVE host only, after approval |
 
-PAPER_SIM and PAPER_BROKER are both "PAPER" in the brief. They are kept separate because they test different things: PAPER_SIM tests the logic with live data and our own fill model; PAPER_BROKER tests the real order life cycle of an external system.
+## 3. Enumerations
 
-**Virtual capital cap:** paper accounts often start with large balances (Alpaca: USD 100k). The ledger enforces a configured capital cap (for example ¥50,000 equivalent) so that sizing, fees and minimum-order effects match the planned live account.
+```python
+class Mode(Enum):                 # operating environment
+    BACKTEST = "backtest"
+    PAPER = "paper"
+    LIVE = "live"
 
-## 3. Composition root
+class BrokerEnvironment(Enum):    # where orders go
+    SIM = "sim"                   # our SimBroker (BACKTEST, PAPER)
+    WEBULL_SANDBOX = "webull_sandbox"   # contract tests only
+    WEBULL_LIVE = "webull_live"         # LIVE only
+```
+
+Allowed combinations are fixed in code: `BACKTEST→SIM`, `PAPER→SIM`, `LIVE→WEBULL_LIVE`. `WEBULL_SANDBOX` is reachable only from the contract-test command, never from `aitrader paper`. Any other combination is a start-up error.
+
+## 4. Composition root
 
 ```python
 def build_system(mode: Mode, cfg: Settings) -> System:
-    clock   = SimClock(cfg.backtest.start) if mode is Mode.BACKTEST else WallClock()
-    data    = select_market_data(mode, cfg)        # replay or live adapter
-    broker  = select_broker(mode, cfg)             # SimBroker / PaperBroker / LiveBroker
+    clock  = SimClock(cfg.backtest.start) if mode is Mode.BACKTEST else WallClock()
+    data   = select_market_data(mode, cfg)          # replay, read-only data source, or Webull (LIVE)
+    broker = select_broker(mode, cfg)               # SimBroker, or WebullBroker(WEBULL_LIVE)
     if mode is Mode.LIVE:
-        LiveGuard(cfg, broker).assert_all_gates()  # raises and exits on any failure
-    risk    = RiskEngine(cfg.risk_limits_for(mode))
-    oms     = OrderManager(broker, OrderGate(HARD_CAPS, cfg.risk_limits_for(mode)), storage)
+        LiveGuard(cfg, broker).assert_all_gates()   # exits on any failure
+    risk   = RiskEngine(cfg.risk_limits_for(mode))
+    oms    = OrderManager(broker, OrderGate(HARD_CAPS, cfg.risk_limits_for(mode)), storage)
     ...
-    return System(clock, data, strategies, risk, oms, ledger, reconciler, notifier)
 ```
 
-`select_broker` uses an explicit allow-list per mode. A PAPER build has no code path that can return a LIVE adapter: LIVE adapters live in a separate module that is imported only inside the `Mode.LIVE` branch, and an integration test asserts that building PAPER never imports it.
+The Webull adapter module (`aitrader.broker.webull`) is imported only in the LIVE branch and in the sandbox test command. An integration test asserts that building BACKTEST or PAPER never imports it.
 
-## 4. LiveGuard: the gates for LIVE
+## 5. Endpoint allow-lists (Webull)
 
-LIVE starts only if **all** gates pass. Each failure stops the process with a clear message and an alert.
+| Broker environment | Allowed hosts (from Webull docs, re-checked in sandbox test SB-6) |
+|---|---|
+| `WEBULL_SANDBOX` | `jp-openapi-alb.uat.webullbroker.com` (trading, data), `jp-openapi-events.uat.webullbroker.com` (events), `data-api.uat.webullbroker.com` (MQTT) |
+| `WEBULL_LIVE` | `api.webull.co.jp` (trading, data), `events-api.webull.co.jp` (events), `data-api.webull.co.jp` (MQTT) |
 
-| Gate | Check | Evidence |
-|---|---|---|
-| G1 Owner approval | A signed approval record `live_approval.yaml` exists on the live host: owner name, date, approved broker, account ID (masked + hash), approved limits hash, expiry date. Approval expires (for example after 90 days) and must be renewed. | File content hash logged at start-up |
-| G2 Separate environment | Process runs on the live host (cloud project ID / machine ID matches the approval); environment variable `AITRADER_ENV=live`; database path is the live path. | Host identity logged |
-| G3 Separate credentials | Live credentials are loaded only from the live secret store; their names carry the `LIVE_` prefix; paper credentials are absent. | Secret source logged (never the value) |
-| G4 Endpoint and account match | Broker endpoint URL is on the live allow-list; the account returned by the API matches the approved account ID hash; the API reports a real-money account (where the API exposes it); account type is cash (no margin). | Account snapshot (masked) |
-| G5 Tests passed | The running git commit has a passing CI result for the full suite including fault tests, recorded in a release manifest. | Manifest with commit SHA and CI run ID |
-| G6 Live limits | `live_limits.yaml` exists, is within hard caps, and its hash equals the approved limits hash. Includes max order notional, max total holdings, daily and monthly loss limits. | Limits hash |
-| G7 Safety self-test | At start-up: kill switch read/write works, reconciliation with the broker returns no mismatch, notifier delivers a test alert, clock drift is within limit. | Self-test report |
+The adapter refuses to start if any configured host is not in the allow-list of its environment. Sandbox hosts are never accepted in LIVE and production hosts never in the sandbox.
 
-There is no "force" flag. To bypass a gate the code must be changed, reviewed and approved.
+## 6. LiveGuard: gates for LIVE
 
-## 5. Promotion path
+LIVE starts only if **all** gates pass. Each failure stops the process with a clear message and an alert. There is no "force" flag.
+
+| Gate | Check |
+|---|---|
+| G1 Owner approval | Approval record `live_approval.yaml` on the LIVE host: owner name, date, broker (`webull_jp`), account ID hash, approved capital (≤ ¥100,000), approved limits hash, expiry (e.g. 90 days). Expired → refuse. |
+| G2 Separate environment | Runs on the LIVE host (cloud project and machine ID match the approval); `AITRADER_ENV=live`; LIVE database path. |
+| G3 Separate credentials | Webull production App Key/Secret come only from the LIVE secret store, with `LIVE_` names; the SDK token directory is the LIVE-only path; no paper or sandbox credentials present. |
+| G4 Endpoint and account | Hosts on the `WEBULL_LIVE` allow-list; `account_list` returns exactly the approved account ID; `account_type == CASH`; tax type matches config (`SPECIFIC` or `GENERAL`). |
+| G5 Authentication health | Token status `NORMAL` (when 2FA is enabled) with `expires_at` beyond the safety margin; App Key expiry date recorded and more than 7 days away; IP allow-list confirmed in the checklist. |
+| G6 Tests and limits | Release manifest shows green CI (unit, property, fault) **and** a passing sandbox contract-test run for the pinned SDK version; `live_limits.yaml` within hard caps and matching the approved hash. |
+| G7 Safety self-test | Kill switch works; reconciliation with Webull shows no mismatch; notifier delivers a test alert; clock drift within limit. |
+
+## 7. Promotion path
 
 ```mermaid
 flowchart LR
-    bt["BACKTEST: walk-forward + hold-out"] --> ps["PAPER_SIM: >= 4 weeks stable"]
-    ps --> pb["PAPER_BROKER: >= 4 weeks, reconciliation clean"]
-    pb --> pre["Pre-live broker test env (chosen broker): adapter validated"]
-    pre --> gate{"Checklist (doc 09) + owner approval"}
-    gate -- no --> ps
-    gate -- yes --> lm["LIVE_MICRO: very small limits"]
-    lm --> ls["LIVE_STAGED: limits raised step by step"]
-    ls -.->|"any red flag"| ps
+    bt["BACKTEST: walk-forward + hold-out"] --> pp["PAPER: virtual portfolio, >= 3 months"]
+    sb["Webull Sandbox contract tests (adapter)"] --> gate
+    pp --> gate{"Checklist (doc 09) + explicit owner approval"}
+    gate -- no --> pp
+    gate -- yes --> lm["LIVE_MICRO: ¥50,000, small order limits"]
+    lm --> ls["LIVE_STAGED: up to ¥100,000"]
+    ls -.->|"any red flag"| pp
 ```
 
-Durations are minimums. Promotion is never automatic: each arrow needs a review by Claude and approval by the owner.
+Durations are minimums. Promotion is never automatic.
 
-## 6. Environment separation in practice
+## 8. Separation in practice
 
-| Concern | PAPER | LIVE |
-|---|---|---|
-| Cloud project | `aitrader-paper` | `aitrader-live` (created only after approval) |
-| Service account | paper-only | live-only |
-| Secret names | `PAPER_*`, `DATA_*`, `LLM_*` | `LIVE_*`, `DATA_*`, `LLM_*` |
-| Config files | `config/paper.yaml` | `live_limits.yaml`, `live_approval.yaml` (not in git) |
-| Database | paper path | live path; backups encrypted |
-| Who can deploy | CI after merge | Manual deploy by the owner's operator after approval |
+| Concern | PAPER host | Development (Claude, Codex, CI) | LIVE host |
+|---|---|---|---|
+| Cloud project | `aitrader-paper` | none / CI runners | `aitrader-live` (created only after approval) |
+| Webull production keys | **never** | **never** | yes (secret store) |
+| Webull sandbox keys | no | yes, public test keys via env variables | no |
+| Data-source key | yes | no (fixtures) | optional |
+| Config files | `config/paper.yaml` | fixtures | `live_limits.yaml`, `live_approval.yaml` (not in git) |
+| Who deploys | CI after merge | — | the owner's operator, manually, after approval |
 
-## 7. What the same-code rule prevents (and how it is tested)
+## 9. What the same-code rule prevents (and how it is tested)
 
 | Risk | Test |
 |---|---|
-| Strategy behaves differently in paper and backtest | **Parity test:** record the bars a PAPER_SIM day used; replay them in BACKTEST; the intents must be identical. |
-| Risk limits differ silently between modes | Limits are loaded through one function; tests compare the effective limits per mode against the documented table. |
-| Paper code reaches a live endpoint | Endpoint allow-list unit tests; build-time import test; LIVE adapter refuses to start without `AITRADER_ENV=live`. |
-| Live code uses paper credentials | Credential prefix check in G3. |
-| Fill model too optimistic in backtest | Compare PAPER_BROKER fills against SimBroker shadow fills on the same orders; track the gap as a metric. |
+| Strategy differs between PAPER and BACKTEST | Parity test: replay a PAPER day's recorded inputs in BACKTEST; intents must be identical. |
+| PAPER costs unrealistically low | PAPER uses the `webull_jp` cost profile (commission 0, CAT/FINRA/SEC, FX 15 sen per USD, minimums, fractional rules); compared with LIVE fees later. |
+| Paper code reaches Webull production | Build-time import test; endpoint allow-list tests; PAPER config schema has no field for Webull production keys. |
+| Sandbox mistaken for a portfolio | `aitrader paper` cannot select `WEBULL_SANDBOX`; sandbox runs write to a throw-away database. |
+| Adapter breaks after a Webull API/SDK change | Sandbox contract tests run before every SDK upgrade and before LIVE start (gate G6). |
 
-## 8. Switching procedure (operator view)
+## 10. Commands (operator view)
 
-1. `aitrader backtest --config config/backtest.yaml` — any time, no credentials needed (Phase 1).
-2. `aitrader paper --sim` — needs a market data key (Phase 3).
-3. `aitrader paper --broker alpaca` — needs paper keys (Phase 3).
-4. `aitrader live` — only on the live host; refuses to run unless LiveGuard passes (Phase 7; disabled until then).
-
-The `live` command exists from the start but its adapter module is empty until the live broker is chosen, so no one can "accidentally" trade real money during development.
+1. `aitrader backtest --config config/backtest.yaml` — no credentials (Phase 1).
+2. `aitrader paper` — PAPER virtual portfolio; needs the data-source key (Phase 3).
+3. `aitrader broker-test --target webull-sandbox` — adapter contract tests against the sandbox (after approval Q10).
+4. `aitrader live` — only on the LIVE host; refuses to run unless LiveGuard passes. Until approval its configuration does not exist, so it always refuses.

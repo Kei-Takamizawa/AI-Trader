@@ -2,6 +2,8 @@
 
 Research date: **2026-10-23**. Tags: **[V]** verified on an official page today, **[S]** secondary source only, **[U]** unverified or not found, **[A]** planning assumption. Sources are listed at the end.
 
+> **v0.2 update:** the owner chose **Webull Securities Japan** as the first-choice broker. A detailed review of the Webull OpenAPI is in [document 14](14-webull-openapi-research.md); it supersedes the Webull entries in the tables below where they differ (notably: fractional orders by amount **are** supported by the API, tokutei accounts **are** supported, FX is JPY 0.15 per USD on the official pricing page, and the FSA registration number is No. 48).
+
 ## 1. What the broker must satisfy
 
 Hard requirements (from the brief):
@@ -28,7 +30,7 @@ Hard requirements (from the brief):
 
 | Item | IBSJ | moomoo JP | Webull JP | Saxo JP | Alpaca |
 |---|---|---|---|---|---|
-| Japan-registered broker | Yes [V] | Yes, Kanto Local Finance Bureau (FIBO) No. 3335 [V] | Yes [S] (registration number not checked) | Yes [S] | Japan licence for B2B infrastructure [V]; direct retail for Japan residents [U] |
+| Japan-registered broker | Yes, FIBO No. 187 [V: FSA registry] | Yes, Kanto Local Finance Bureau (FIBO) No. 3335 [V] | Yes, FIBO No. 48 [V: FSA registry] | Yes [S] | Japan licence for B2B infrastructure [V]; direct retail for Japan residents [U] |
 | API for US stocks | TWS API (Python), Web API (REST + WebSocket), FIX [V] | OpenAPI via local gateway "OpenD" or cloud REST [V]. **Conflict:** one official page says Japanese customers can trade US stocks and US stock options via API, another says "currently only US stock options" [V, conflicting] | Trading API supports US equities and JP equities [V] | OpenAPI for "foreign stocks etc." [V]; US stocks not named | Excellent REST + WebSocket [V] |
 | Order types documented | Full IBKR set [U for IBSJ specifics] | Market, limit, stop, stop-limit, trailing and touch types [V] | Market, limit, stop, stop-limit; DAY / GTC [V] | [U] | Full set [V] |
 | Idempotency key | `orderRef` / perm IDs [U] | [U] | `client_order_id` required, unique per account [V] | [U] | `client_order_id` [V] |
@@ -43,11 +45,11 @@ Hard requirements (from the brief):
 | Item | IBSJ | moomoo JP | Webull JP | Saxo JP | Alpaca |
 |---|---|---|---|---|---|
 | US stock commission | Fixed: USD 0.005/share, **min USD 1.00/order**, max 1% of trade value. Tiered: USD 0.0035/share (≤300k shares/month), **min USD 0.35**, plus exchange/clearing fees. Includes 10% Japanese consumption tax. Tiered not available for direct-routed API orders [V] | Basic course: **0.132% of trade value** (tax incl.), cap USD 22; amounts under USD 0.01 round up to 0.01 [V] | **USD 0 from 2026-07-27** (announced as permanent; date marked "planned") [V]; third-party fees (SEC, FINRA, CAT) passed through [V] | 0.088% min USD 1.10 [S] | USD 0 (not usable for live from Japan) |
-| Fractional shares | Available for US stocks/ETFs after enabling [V]; via API for IBSJ [U]; "non-recurring fractional trades: minimum commission USD 0.01" stated, meaning unclear [V text, U meaning] | "micro US stocks" with same 0.132% fee [V]; API order quantity accepts 3 decimals (global docs) [V]; for Japanese accounts via API [U] | In the app [S]; API documents quantity orders only (`entrust_type: QTY`) [V]; fractional via API [U] | [U] | Yes [V] |
-| FX (JPY ⇄ USD) | Automatic conversion: 0.03% added to the rate, no separate fee; manual conversion to JPY: min USD 2.00 equivalent [V] | Real-time FX "free", but the rate **includes a spread** of unstated size; may become paid [V] | JPY 0.15 per USD [S] (≈0.1% at ¥155) | [U] | n/a |
-| Minimum deposit / balance | No account maintenance fee or minimum balance requirement [V] | Not stated [U] | Not stated [U] | Individuals: none (API page) [V] | n/a |
+| Fractional shares | Available for US stocks/ETFs after enabling [V]; via API for IBSJ [U]; "non-recurring fractional trades: minimum commission USD 0.01" stated, meaning unclear [V text, U meaning] | "micro US stocks" with same 0.132% fee [V]; API order quantity accepts 3 decimals (global docs) [V]; for Japanese accounts via API [U] | **Via API by amount (`entrust_type: AMOUNT`) or decimal quantity**; buy ≥ USD 1, step 0.00001; regular hours; market or marketable limit only [V, document 14] | [U] | Yes [V] |
+| FX (JPY ⇄ USD) | Automatic conversion: 0.03% added to the rate, no separate fee; manual conversion to JPY: min USD 2.00 equivalent [V] | Real-time FX "free", but the rate **includes a spread** of unstated size; may become paid [V] | **JPY 0.15 per USD** per conversion [V] (≈0.1% at ¥155) | [U] | n/a |
+| Minimum deposit / balance | No account maintenance fee or minimum balance requirement [V] | Not stated [U] | Account opening and maintenance free [V]; minimum deposit not stated [U] | Individuals: none (API page) [V] | n/a |
 | Real-time US data | Free real-time streaming from Cboe One and IEX (not consolidated) [V]; consolidated NBBO bundle USD 10/month (waived at USD 30 monthly commissions) + USD 4.50 add-on [V] | API data rights separate from the app; some data paid [V]; US LV3 free "during promotion" (global docs) [V], applicability to Japan [U] | Nasdaq Basic free for OpenAPI (separate subscription from the app; one device at a time) [V] | [U] | IEX real-time free; full SIP USD 99/month [V] |
-| Tax account type | **General account only; no tokutei (特定) account** [V] → self-reporting every year | [U] | [U]; NISA not supported [S] | [U] | n/a |
+| Tax account type | **General account only; no tokutei (特定) account** [V] → self-reporting every year | [U] | **Tokutei and general accounts** [V]; API orders state `account_tax_type` [V] | [U] | n/a |
 
 ### 3.3 Other notes
 
@@ -76,26 +78,26 @@ Largest position that fits the budget, and how much of the budget fees consume (
 
 The proposed rule (document 05, R-ECON-1) is that expected round-trip cost must not exceed **20%** of the risk budget. Under these assumptions:
 
-- **Webull JP and moomoo JP pass** at ¥50,000 and ¥100,000 — *if* the API can trade fractional shares or the universe is restricted to ETFs priced below the position size (≈ USD 37 at ¥50,000, ≈ USD 75 at ¥100,000). Whole-share-only trading at ¥50,000 leaves very few eligible instruments, so **fractional orders through the API are decisive**.
+- **Webull JP and moomoo JP pass** at ¥50,000 and ¥100,000 — *if* the API can trade fractional shares or the universe is restricted to ETFs priced below the position size (≈ USD 37 at ¥50,000, ≈ USD 75 at ¥100,000). Whole-share-only trading at ¥50,000 leaves very few eligible instruments, so **fractional orders through the API are decisive**. For Webull this is now verified in the API reference (document 14); the universe is restricted to instruments flagged `fractionable`.
 - **IBSJ fails** at both sizes, because the minimum commission is about 1% of a sub-USD 100 order per side. By the same model (position ≈ 10% of equity, costs ≤ 20% of the budget) IBSJ becomes workable from roughly ¥130,000 (Tiered) or ¥350,000 (Fixed) [A].
 
 Operating costs are a separate and larger problem at this size (see document 08): even the cheapest setup costs about the same as the monthly profit target of a ¥50,000 account. **The small live phase is a technical and execution-quality test, not an income source.**
 
 ## 5. Recommendation
 
-| Purpose | Choice | Status |
+| Purpose | Choice (v0.2) | Status |
 |---|---|---|
-| BACKTEST data | Alpaca historical data (free plan, consolidated history older than 15 minutes) with a second source for cross-checks | Needs Alpaca sign-up (owner approval Q2) |
-| PAPER, stage 1 | Internal simulator (`SimBroker`) driven by live market data | No broker account needed |
-| PAPER, stage 2 | Alpaca paper account (realistic order life cycle, free) | Needs owner approval Q2 |
-| PAPER, stage 3 (pre-live) | The chosen live broker's own paper/test environment | After broker choice |
-| LIVE shortlist | 1. Webull JP, 2. moomoo JP, 3. IBSJ (only with more capital) | **Not decided.** Resolve the items in section 6 first |
+| BACKTEST data | Alpaca historical data (free plan, consolidated history older than 15 minutes), used read-only, with a second source for cross-checks | Needs Alpaca sign-up (owner approval Q2) |
+| PAPER | Our own virtual portfolio (`SimBroker` + ledger) with live data from the same read-only source and the `webull_jp` cost/fractional profile | No broker account needed |
+| Broker adapter tests | Webull Sandbox (shared public test accounts) | After design approval (Q10) |
+| LIVE | **Webull Securities Japan** via the official Python SDK; disabled until approval | Owner decision; open points in document 14 §8 |
+| Fallbacks | moomoo JP (percentage fees) and IBSJ (needs more capital) — adapters only if Webull fails verification | Not planned |
 
-Paper results on Alpaca do **not** predict live results at a Japanese broker: fill logic, fees, FX, fractional rules and data feeds differ. Stage 3 exists for that reason.
+PAPER results do **not** predict live results: real fills, liquidity and Webull's order handling can differ from our fill model. The LIVE_MICRO stage exists for that reason.
 
-## 6. Questions to confirm with the broker before choosing (Phase 6)
+## 6. Questions to confirm with the broker (Phase 6)
 
-For each shortlisted broker, written answers (support ticket or official documentation) to:
+For Webull the concrete list is in document 14, section 8 (sandbox checks SB-1 to SB-6, broker questions WB-1 to WB-8). The generic list below applies to any broker that replaces Webull later. Written answers (support ticket or official documentation) to:
 
 1. Can a Japan-resident individual trade **US stocks/ETFs** (not only options) through the API, fully automatically, without per-order confirmation? (moomoo: resolve the conflicting pages.)
 2. Are **fractional / amount-based** orders available through the API? Minimum order value? Which order types and time-in-force values work with fractional orders?
@@ -125,7 +127,8 @@ For each shortlisted broker, written answers (support ticket or official documen
 
 | Area | Choice | Reason | Alternatives considered |
 |---|---|---|---|
-| Language | Python 3.12, managed with `uv` | All broker SDKs considered are Python; strong data tooling | — |
+| Language | Python 3.14 preferred (3.13 fallback), managed with `uv`; final choice in TASK-001 after a dependency check | The Webull SDK supports 3.8–3.14 and allows current `cryptography`/`grpcio` versions only on 3.14 (document 14, U12) | 3.12 |
+| Broker SDK | `webull-openapi-python-sdk`, exact version pinned; upgrades only after sandbox contract tests | Official SDK handles signing, token and gRPC/MQTT | Raw HTTP (more code, more risk) |
 | Data frames / storage | pandas 2 + pyarrow, Parquet files | Mature, simple | polars (faster, not needed at this scale) |
 | Config and schemas | pydantic v2, pydantic-settings, YAML files | Validation of every config value and every AI output | dataclasses + manual checks |
 | State database | SQLite (WAL) via SQLAlchemy Core, Alembic migrations | Single node, zero cost, easy backup | PostgreSQL (managed DB adds about USD 10+/month) |
@@ -139,7 +142,7 @@ For each shortlisted broker, written answers (support ticket or official documen
 | Static checks | ruff (lint + format), mypy (strict for core packages), import-linter (dependency rules) | Enforces "risk does not import AI" mechanically | — |
 | CI | GitHub Actions | Runs on every pull request | — |
 | LLM | Anthropic Python SDK, structured outputs; Message Batches for non-urgent analysis | Schema-checked outputs; batch is 50% cheaper [V] | — |
-| Broker SDKs | `alpaca-py` (paper); live broker SDK added only after the broker is chosen | Avoid unused dependencies | — |
+| Data SDK | `alpaca-py` market data client only (no trading calls), if Q2 is approved | Read-only data for BACKTEST/PAPER | Another data vendor |
 | Notifications | Email (SMTP) + one push channel (ntfy / Discord / Telegram webhook) | Two independent channels | LINE Notify (service ended in 2025) |
 | Watchdog | External heartbeat monitor (SaaS free tier or a small cloud function) | Different failure domain from the VM | — |
 | Hosting | Google Cloud Compute Engine, `us-east1`; free tier e2-micro (1 instance/month in us-west1, us-central1 or us-east1) [V] | Low cost, US region | AWS Lightsail, Hetzner |
@@ -187,6 +190,8 @@ Alpaca (official):
 - SBI Holdings partnership and Japan licence: https://alpaca.markets/blog/alpaca-and-japans-sbi-holdings-announce-partnership-and-usd15-million-strategic-investment-to-accelerate-alpacas-asian-business/
 
 Other:
+- FSA registry of financial instruments business operators (IBSJ No. 187, Webull No. 48): https://www.fsa.go.jp/menkyo/menkyoj/kinyushohin.xlsx
+- Full Webull source list: document 14, section 9
 - Pattern-day-trader rule change (secondary): https://international.schwab.com/story/sec-approves-scrapping-25000-day-trader-minimum
 - Google Cloud free tier: https://docs.cloud.google.com/free/docs/free-cloud-features
 - Anthropic API pricing: https://platform.claude.com/docs/en/about-claude/pricing
