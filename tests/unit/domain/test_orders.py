@@ -10,7 +10,9 @@ from aitrader.domain import (
     IntentPurpose,
     Money,
     OrderIntent,
+    OrderRequest,
     OrderStatus,
+    OrderType,
     RiskDecision,
     RuleResult,
     Side,
@@ -172,3 +174,44 @@ def test_stop_exit_and_flatten_are_sells() -> None:
     for purpose in (IntentPurpose.STOP_EXIT, IntentPurpose.FLATTEN):
         intent = _intent(side=Side.SELL, purpose=purpose, stop_price=None, limit_price=None)
         assert intent.purpose is purpose
+
+
+def _order_request(**overrides: object) -> OrderRequest:
+    fields: dict[str, object] = {
+        "client_order_id": "ABC-1",
+        "intent_id": "intent-1",
+        "symbol": "SPY",
+        "side": Side.BUY,
+        "purpose": IntentPurpose.ENTRY,
+        "order_type": OrderType.LIMIT,
+        "quantity": "0.3",
+        "limit_price": "100",
+    }
+    fields.update(overrides)
+    return OrderRequest.model_validate(fields)
+
+
+def test_order_request_notional_at_the_limit() -> None:
+    assert _order_request().notional_at_limit == Decimal(30)
+    market = _order_request(
+        side=Side.SELL,
+        purpose=IntentPurpose.STOP_EXIT,
+        order_type=OrderType.MARKET,
+        limit_price=None,
+    )
+    assert market.notional_at_limit is None
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"purpose": IntentPurpose.EXIT}, "ENTRY orders are BUYs"),
+        ({"order_type": OrderType.MARKET}, "carry a limit price"),
+        ({"limit_price": None}, "carry a limit price"),
+        ({"client_order_id": "has space"}, "pattern"),
+        ({"client_order_id": "X" * 33}, "pattern"),
+    ],
+)
+def test_order_request_rules(overrides: dict[str, object], message: str) -> None:
+    with pytest.raises(ValidationError, match=message):
+        _order_request(**overrides)

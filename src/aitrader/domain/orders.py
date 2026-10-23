@@ -5,8 +5,9 @@ from typing import Any, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from aitrader.domain.enums import IntentPurpose, Side, Verdict
+from aitrader.domain.enums import IntentPurpose, OrderType, Side, TimeInForce, Verdict
 from aitrader.domain.errors import DomainError
+from aitrader.domain.ids import CLIENT_ORDER_ID_PATTERN
 from aitrader.domain.market import Symbol
 from aitrader.domain.money import Currency, Money
 from aitrader.domain.types import NonNegativeDecimal, PositiveDecimal, UtcDatetime
@@ -110,3 +111,32 @@ class RiskDecision(BaseModel):
             if self.verdict is Verdict.APPROVE and failed:
                 raise ValueError("APPROVE is not allowed when a rule failed; use REDUCE or REJECT")
         return self
+
+
+class OrderRequest(BaseModel):
+    """The order sent to a broker for one attempt of one intent."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    client_order_id: str = Field(pattern=CLIENT_ORDER_ID_PATTERN)
+    intent_id: str = Field(min_length=1)
+    symbol: Symbol
+    side: Side
+    purpose: IntentPurpose
+    order_type: OrderType
+    quantity: PositiveDecimal
+    limit_price: PositiveDecimal | None = None
+    time_in_force: TimeInForce = TimeInForce.DAY
+    extended_hours: bool = False
+
+    @model_validator(mode="after")
+    def _check(self) -> Self:
+        if (self.purpose is IntentPurpose.ENTRY) != (self.side is Side.BUY):
+            raise ValueError("ENTRY orders are BUYs and every other purpose is a SELL")
+        if (self.order_type is OrderType.LIMIT) != (self.limit_price is not None):
+            raise ValueError("LIMIT orders, and only those, carry a limit price")
+        return self
+
+    @property
+    def notional_at_limit(self) -> Decimal | None:
+        return self.quantity * self.limit_price if self.limit_price is not None else None

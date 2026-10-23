@@ -235,3 +235,18 @@ forbidden_modules = [
     "aitrader.storage",
     "aitrader.strategy",
 ]
+
+[[tool.importlinter.contracts]]
+name = "Core packages use the broker port, never a concrete broker adapter"
+type = "forbidden"
+source_modules = [
+    "aitrader.ai",
+    "aitrader.domain",
+    "aitrader.execution",
+    "aitrader.fees",
+    "aitrader.portfolio",
+    "aitrader.reconcile",
+    "aitrader.risk",
+    "aitrader.strategy",
+]
+forbidden_modules = ["aitrader.broker.sim"]

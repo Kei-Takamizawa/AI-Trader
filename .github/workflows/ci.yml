@@ -44,10 +44,10 @@ jobs:
       - name: Tests with coverage
         run: uv run pytest --cov=aitrader --cov-report=term-missing
 
-      - name: Coverage gate for domain, config, clock, fees, risk and portfolio (>= 90%)
+      - name: Coverage gate for the core packages (>= 90%)
         run: >-
           uv run coverage report
-          --include='src/aitrader/domain/*,src/aitrader/config/*,src/aitrader/clock/*,src/aitrader/fees/*,src/aitrader/risk/*,src/aitrader/portfolio/*'
+          --include='src/aitrader/domain/*,src/aitrader/config/*,src/aitrader/clock/*,src/aitrader/fees/*,src/aitrader/risk/*,src/aitrader/portfolio/*,src/aitrader/execution/*,src/aitrader/broker/*'
           --fail-under=90
 
       - name: CLI smoke test

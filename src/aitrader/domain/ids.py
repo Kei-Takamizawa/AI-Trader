@@ -11,6 +11,8 @@ _ID_VERSION = "v1"
 _CLIENT_ORDER_PREFIX_LEN = 26
 MAX_ATTEMPT = 99_999
 """Attempt numbers have at most five digits, so client order IDs stay within 32 characters."""
+CLIENT_ORDER_ID_PATTERN = r"^[A-Za-z0-9_-]{1,32}$"
+"""Webull's rule for ``client_order_id`` (document 05, DUP-2)."""
 
 
 def make_intent_id(

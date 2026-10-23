@@ -86,7 +86,7 @@ strategy      -> domain only
 risk          -> domain, config, fees
 portfolio     -> domain only
 execution     -> domain, risk (types only), portfolio, broker (port only)
-broker        -> domain, config
+broker        -> domain, config (the sim adapter also uses fees, portfolio and clock)
 ai            -> domain, config, news (port), storage (port)
 app           -> everything (composition root)
 

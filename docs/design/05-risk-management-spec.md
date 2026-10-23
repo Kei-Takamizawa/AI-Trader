@@ -201,7 +201,7 @@ Reconciliation also runs after every reconnect, every 15 minutes in market hours
 | HC-3 | Only stocks/ETFs on the allow-list; no options, futures, crypto, leveraged or inverse ETFs. |
 | HC-4 | LIVE order notional ≤ ¥50,000 equivalent. |
 | HC-5 | LIVE total holdings ≤ ¥100,000 equivalent. |
-| HC-6 | ≤ 20 orders per day. |
+| HC-6 | ≤ 20 orders per day. Protective exits (stop exits, flatten) are not blocked by this cap, so a busy day can never prevent a stop from being placed. |
 | HC-7 | Regular trading hours only. |
 | HC-8 | Every order references an approved `RiskDecision` for the same intent and quantity. |
 | HC-9 | Kill switch not set; system state allows the order type. |

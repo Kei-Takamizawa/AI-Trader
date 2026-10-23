@@ -1,1 +1,1 @@
-"""Broker port and adapters: SimBroker and the Webull adapter (not implemented yet)."""
+"""Broker port and adapters. Only ``app`` and ``cli`` choose a concrete adapter."""

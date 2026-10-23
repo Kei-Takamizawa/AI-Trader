@@ -30,7 +30,7 @@ from aitrader.domain.fills import Fill
 from aitrader.domain.ids import make_client_order_id, make_intent_id
 from aitrader.domain.market import Bar, Instrument, Quote
 from aitrader.domain.money import Currency, Money
-from aitrader.domain.orders import OrderIntent, RiskDecision, RuleResult
+from aitrader.domain.orders import OrderIntent, OrderRequest, RiskDecision, RuleResult
 
 __all__ = [
     "AdvisoryKind",
@@ -53,6 +53,7 @@ __all__ = [
     "OperatingCost",
     "OperatingCostCategory",
     "OrderIntent",
+    "OrderRequest",
     "OrderStatus",
     "OrderType",
     "Quote",
