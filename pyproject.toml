@@ -210,3 +210,28 @@ forbidden_modules = [
     "aitrader.storage",
     "aitrader.strategy",
 ]
+
+[[tool.importlinter.contracts]]
+name = "The portfolio package depends only on the domain package"
+type = "forbidden"
+source_modules = ["aitrader.portfolio"]
+forbidden_modules = [
+    "aitrader.ai",
+    "aitrader.app",
+    "aitrader.backtest",
+    "aitrader.broker",
+    "aitrader.cli",
+    "aitrader.clock",
+    "aitrader.config",
+    "aitrader.data",
+    "aitrader.execution",
+    "aitrader.fees",
+    "aitrader.metrics",
+    "aitrader.news",
+    "aitrader.notify",
+    "aitrader.ops",
+    "aitrader.reconcile",
+    "aitrader.risk",
+    "aitrader.storage",
+    "aitrader.strategy",
+]

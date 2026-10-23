@@ -127,6 +127,15 @@ class TradeCostType(StrEnum):
     OTHER = "OTHER"
 
 
+class OperatingCostCategory(StrEnum):
+    """Costs of running the system, kept apart from trading P&L (document 08 §4)."""
+
+    AI = "AI"
+    SERVER = "SERVER"
+    DATA = "DATA"
+    OTHER = "OTHER"
+
+
 class FxDirection(StrEnum):
     JPY_TO_USD = "JPY_TO_USD"
     USD_TO_JPY = "USD_TO_JPY"

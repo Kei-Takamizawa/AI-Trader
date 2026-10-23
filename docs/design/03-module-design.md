@@ -84,7 +84,7 @@ config, clock <- may import domain
 fees          -> domain only
 strategy      -> domain only
 risk          -> domain, config, fees
-portfolio     -> domain
+portfolio     -> domain only
 execution     -> domain, risk (types only), portfolio, broker (port only)
 broker        -> domain, config
 ai            -> domain, config, news (port), storage (port)
@@ -235,7 +235,7 @@ Operational rules: SDK retries are not relied on for POST requests; a timeout ma
 | `trade_costs` | Every trading cost, one row per item | ts, client_order_id, type (COMMISSION, CAT_FEE, FINRA_FEE, SEC_FEE, ADR_FEE, OTHER), amount, currency, actual_or_estimated, source (broker breakdown / cost model) |
 | `fx_conversions` | Every JPY⇄USD conversion | ts, jpy_amount, usd_amount, applied_rate, reference_rate, spread_cost_jpy, source (statement / manual entry) |
 | `positions_snapshots` | End-of-day and on-change snapshots | ts, symbol, qty, avg_cost, market_value |
-| `cash_ledger` | Double-entry cash movements | entry_id, ts, account (CASH_USD, CASH_JPY, FEES, FX, DIVIDENDS, ...), amount, currency, ref |
+| `cash_ledger` | Double-entry journal; every entry balances per currency | entry_id, ts, kind, account (CASH_USD_SETTLED, CASH_USD_UNSETTLED, CASH_JPY, SECURITIES, FX_CLEARING, OWNER_CAPITAL, REALIZED_PNL, DIVIDEND_INCOME, WITHHOLDING_TAX, TRADING_FEES, FX_COST, BANK_FEES), detail (symbol, fee type, country), amount, currency, ref |
 | `operating_costs` | AI, server, data, other costs | ts, category (AI / SERVER / DATA / OTHER), provider, amount, currency, ref |
 | `equity_curve` | Daily equity | date, equity_usd, equity_jpy, fx_rate, trading_pnl, operating_costs |
 | `risk_events` | Rule breaches, circuit breakers | ts, rule_id, severity, details_json |

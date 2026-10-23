@@ -1,7 +1,7 @@
 """Immutable domain types shared by every package (no I/O)."""
 
 from aitrader.domain.advisory import AdvisorySignal
-from aitrader.domain.costs import FxConversion, TradeCost
+from aitrader.domain.costs import FxConversion, OperatingCost, TradeCost
 from aitrader.domain.enums import (
     AdvisoryKind,
     AdvisorySource,
@@ -10,6 +10,7 @@ from aitrader.domain.enums import (
     InstrumentKind,
     IntentPurpose,
     Mode,
+    OperatingCostCategory,
     OrderStatus,
     OrderType,
     RunPurpose,
@@ -25,6 +26,7 @@ from aitrader.domain.errors import (
     DomainError,
     EnvironmentNotAllowedError,
 )
+from aitrader.domain.fills import Fill
 from aitrader.domain.ids import make_client_order_id, make_intent_id
 from aitrader.domain.market import Bar, Instrument, Quote
 from aitrader.domain.money import Currency, Money
@@ -40,6 +42,7 @@ __all__ = [
     "CurrencyMismatchError",
     "DomainError",
     "EnvironmentNotAllowedError",
+    "Fill",
     "FxConversion",
     "FxDirection",
     "Instrument",
@@ -47,6 +50,8 @@ __all__ = [
     "IntentPurpose",
     "Mode",
     "Money",
+    "OperatingCost",
+    "OperatingCostCategory",
     "OrderIntent",
     "OrderStatus",
     "OrderType",

@@ -4,7 +4,7 @@ from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from aitrader.domain.enums import FxDirection, TradeCostType
+from aitrader.domain.enums import FxDirection, OperatingCostCategory, TradeCostType
 from aitrader.domain.money import Currency, Money
 from aitrader.domain.types import PositiveDecimal, UtcDatetime
 
@@ -56,3 +56,23 @@ class FxConversion(BaseModel):
         """Cost against the reference rate, in JPY (never negative)."""
         diff = abs(self.applied_rate - self.reference_rate)
         return Money(amount=diff * self.usd_amount.amount, currency=Currency.JPY)
+
+
+class OperatingCost(BaseModel):
+    """An AI, server, data or other running cost. Paid outside the brokerage account."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    cost_id: str = Field(min_length=1)
+    ts: UtcDatetime
+    category: OperatingCostCategory
+    provider: str = Field(min_length=1)
+    amount: Money
+    estimated: bool = False
+    ref: str = ""
+
+    @model_validator(mode="after")
+    def _check(self) -> Self:
+        if self.amount.is_negative:
+            raise ValueError("an operating cost must not be negative")
+        return self
