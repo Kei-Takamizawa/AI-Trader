@@ -56,12 +56,10 @@ class RiskLimits(BaseModel):
         return self
 
 
-class BacktestSettings(BaseModel):
+class SimulationSettings(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    start: date
-    end: date
-    initial_capital_usd: PositiveDecimal
+    initial_capital_usd: PositiveDecimal = Decimal(323)
     fx_jpy_per_usd: PositiveDecimal = Decimal(155)
     """Fixed rate for the JPY-denominated caps and reports (USD is held; no conversions)."""
     half_spread_bps: PositiveDecimal = Decimal(1)
@@ -72,6 +70,18 @@ class BacktestSettings(BaseModel):
     dividend_us_withholding_pct: Annotated[NonNegativeDecimal, Field(le=100)] = Decimal(10)
     dividend_jp_withholding_pct: Annotated[NonNegativeDecimal, Field(le=100)] = Decimal("20.315")
 
+    def simulation(self) -> SimulationSettings:
+        """Keep flat YAML keys while sharing validated simulator inputs."""
+        return SimulationSettings.model_validate(
+            self.model_dump(include=set(SimulationSettings.model_fields))
+        )
+
+
+class BacktestSettings(SimulationSettings):
+    start: date
+    end: date
+    initial_capital_usd: PositiveDecimal = Field(...)
+
     @model_validator(mode="after")
     def _check_period(self) -> Self:
         if self.end <= self.start:
@@ -79,10 +89,8 @@ class BacktestSettings(BaseModel):
         return self
 
 
-class PaperSettings(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    virtual_capital_jpy: PositiveDecimal = Decimal(50_000)
+class PaperSettings(SimulationSettings):
+    start: date
 
 
 class DataSourceSettings(BaseModel):

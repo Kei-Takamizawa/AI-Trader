@@ -1,116 +1,152 @@
-# CURRENT_TASK — TASK-012: S1 v1.1 research support (cash proxy, risk override, deflated Sharpe)
+# CURRENT_TASK — TASK-013: PAPER stage 1, a local daily runner verified by replay
 
 Designer: Claude (cloud), 2026-10-24. Implementer and tester: Codex. Read `AGENTS.md` first.
-The previous task's spec is archived in `docs/tasks/TASK-008.md`.
+The previous task's spec is archived in `docs/tasks/TASK-012.md`.
 
 Design sources:
-- `docs/research/2026-10-24-s1-v1.1-plan.md`: the declared plan. **Read it first.** This task
-  implements its §4 and nothing else.
-- `docs/research/2026-10-24-p2-walkforward.md`: the P2 results and diagnosis;
-- document 11 §3 (S1), document 12 §3 (walk-forward) and §6 (metrics, deflated Sharpe);
-- `src/aitrader/strategy/momentum.py`, `src/aitrader/backtest/walkforward.py`,
-  `src/aitrader/metrics/performance.py`, `src/aitrader/cli/main.py`.
+- document 04 §11 (new, **read it first**): PAPER stage 1 and why it replays daily bars;
+- document 04 §1–§2 (environments), document 13 §4.1 (status bundle and daily report);
+- document 07 (P3 goals), `docs/research/2026-10-24-s1-v1.1-results.md` (S1 1.0.0 stays the
+  reference strategy);
+- `src/aitrader/backtest/engine.py`, `src/aitrader/config/settings.py`, `config/paper.yaml`,
+  `src/aitrader/storage/`, `src/aitrader/cli/main.py`.
 
-No protected path is touched. `hard_caps.py`, `risk/` and `config/*.yaml` stay unchanged. The
-override in B is applied in memory to a research run only.
+No protected path is touched: `risk/`, `hard_caps.py`, `execution/gate*`, `broker/webull/` and
+`config/live*` stay unchanged. No network access, no scheduler, no cloud resources.
+
+## Goal
+
+`aitrader paper run` advances our own virtual portfolio (PAPER, `SimBroker`, S1 1.0.0) to the
+latest completed session in the local data, using exactly the backtest code path. Every run
+replays the book from the PAPER start date and checks that the replay reproduces every session
+already recorded. A mismatch halts the book. Missed days (the Mac was asleep) are caught up on the
+next run. Re-running for the same data changes nothing.
 
 ## Scope
 
-### A. Cash proxy for S1 (plan C1)
+### A. Settings
 
-- `MomentumParams.cash_proxy: str | None = None`. When it is `None`, behaviour is byte-identical
-  to 1.0.0; the existing tests and the fixture backtest prove it.
-- When it is set (`"SHY"`):
-  - the proxy symbol is removed from the momentum ranking and the equivalents handling;
-  - after selection, let `empty = top_n - len(selected)`. If `empty > 0`, the strategy wants one
-    position in the proxy with target weight `target_weight × empty`. The risk engine applies
-    its normal sizing and caps (the 25% ETF cap will usually bind; that is intended);
-  - if `empty == 0`, any proxy position is exited at the next review like any other holding that
-    is no longer wanted;
-  - the proxy has no trend filter and no momentum requirement. It uses the same ATR stop rule as
-    other holdings, so a stop-out is handled the same way;
-  - the proxy must have bars on the session; if it has none, it stays in cash (log the reason in
-    the decision reasons, as for other symbols).
-- `params()` includes `cash_proxy`, so `params_hash` differs from 1.0.0 only when it is set.
-- Tests: no qualifying ETF → the proxy at `top_n × target_weight` intent; 1 of 3 qualifying → the
-  proxy at 2 slots; all qualifying → the proxy is exited; the proxy is never ranked; missing proxy
-  bars → cash; `cash_proxy=None` gives identical intents to today on the existing fixtures.
+- New `SimulationSettings` model with the fields the simulator needs: `initial_capital_usd`,
+  `fx_jpy_per_usd`, `half_spread_bps`, `max_participation_pct`, `dividend_us_withholding_pct`,
+  `dividend_jp_withholding_pct` (same types, defaults and validation as today).
+- `BacktestSettings` keeps its flat YAML keys and gains a method or property that returns its
+  `SimulationSettings`. `PaperSettings` becomes:
+  - `start: date` (the first session the PAPER book may trade);
+  - the same six simulation fields, flat, with the same defaults;
+  - `virtual_capital_jpy` is removed (the book is in USD like the backtest; the JPY figure is
+    `initial_capital_usd × fx_jpy_per_usd` in reports).
+- `config/paper.yaml`: `paper.start: 2026-10-26`, `initial_capital_usd: 323`, `fx_jpy_per_usd: 155`,
+  and the other simulation values equal to `config/backtest.yaml`. Keep the comments accurate.
+- `run_backtest` gets an optional `simulation: SimulationSettings | None = None`; `None` means the
+  backtest settings, as today.
+- **Backtest outputs, the manifest and the run ID must be byte-identical to before** (fixture
+  double run against the pre-task output; say so in LAST_REPORT). If `config_hash` would change
+  for BACKTEST, the refactor is wrong.
 
-### B. Research-only risk override and v1.1 families on `aitrader walkforward` (plan C2, §2)
+### B. Paper runner (`aitrader.app.paper` or a new `aitrader.paper` package; respect the
+import-linter contracts and add one for the new package if it needs a rule)
 
-- New option `--risk-per-trade-pct <Decimal>` (default: none → configuration value).
-  - It is validated: `0 < value ≤ HARD_CAPS["risk_per_trade_pct"]`; anything else exits with the
-    usage-error code and a clear message. Decimal parsing only (no float).
-  - It is applied by `model_copy` on the loaded `Settings.risk`, only for this command, and only in
-    BACKTEST mode. It never writes a file.
-  - The manifest records `risk_override: {"risk_per_trade_pct": "<value>"}`, or `null`.
-- New option `--cash-proxy <SYMBOL>` (default none), only for `--strategy S1`. It builds the S1
-  grid with that `cash_proxy` on every grid point. The grid points stay as in `S1_GRID`.
-- New option `--prior-variants <int>` (default 0). The manifest gets
-  `variants_tried_total = prior_variants + len(grid)`, and `variants_tried` (this run's grid)
-  stays as today.
-- `run_walkforward` gets these as explicit parameters (no globals). Its existing behaviour, with
-  defaults, is unchanged; prove it with the existing walk-forward tests and the fixture double run.
+`run_paper(settings, source, adjusted, state_dir, through, clock, git_commit)`:
 
-### C. Metrics (plan §4)
+1. Requires `settings.mode is Mode.PAPER` and `broker_environment is SIM`.
+2. `data_end` = the last SPY session in `source`. `through` defaults to `data_end` and may not be
+   later. If `through < paper.start`, nothing is recorded and the status says the book has not
+   started.
+3. Replays `run_backtest(settings, S1 1.0.0 default params, source, adjusted=…, start=paper.start,
+   end=through, simulation=paper simulation settings)`. Same strategy, risk, execution and
+   SimBroker code as BACKTEST; no new trading logic.
+4. Builds one **session snapshot** per replayed session: session date, equity, cash (settled and
+   unsettled if available), positions (symbol, quantity, average cost, close, market value),
+   fills of that session (symbol, side, quantity, price, fees), the intents produced at that
+   close for the next session (symbol, side, purpose, target, stop, reason), risk rejections if
+   the cycle exposes them, and a `snapshot_hash` (sha256 of the canonical JSON of the snapshot,
+   sorted keys, Decimal as strings).
+5. State lives in `state_dir/paper.db` (SQLite through `aitrader.storage.Database`; add the new
+   tables as a new schema step, never by editing an existing step):
+   - `paper_book`: one row holding `start`, `strategy_id`, `strategy_version`, `params_hash`,
+     `simulation` (canonical JSON) and the `risk` limits hash, written on the first run;
+   - `paper_sessions`: `session` (primary key), `snapshot_json`, `snapshot_hash`, `recorded_at`,
+     `git_commit`, `data_snapshot_hash`.
+6. On every run, before writing:
+   - if the book row exists and any of its fields differs from the current configuration, refuse
+     (new exit code `EXIT_PAPER_MISMATCH = 6`) with a message that a changed book needs a new
+     state directory;
+   - for every recorded session ≤ `through`, the replay's `snapshot_hash` must equal the recorded
+     one. On the first difference: write nothing new, set the status to `HALTED` with the session
+     and the differing top-level fields, and exit 6;
+   - recorded sessions later than `through` are allowed (an older `--through`) and are left alone.
+7. New sessions (after the last recorded one, ≤ `through`) are inserted in one transaction.
+   A second run with the same data inserts nothing and exits 0.
+8. A `CorporateActionError` or `DataError` from the replay sets `HALTED` with the reason, records
+   nothing, and exits with the existing data-error code.
+9. One run at a time: take `SingleInstanceLock` on the state directory; a second concurrent run
+   exits with a clear message (existing usage-error code).
+10. The wall clock is read only through the injected `aitrader.clock` clock (`recorded_at`, data
+    staleness). No `datetime.now()` elsewhere.
 
-1. **Deflated Sharpe ratio** (Bailey and López de Prado, 2014), new function in
-   `aitrader.metrics` (for example `deflated_sharpe(...)`), exactly:
-   - `sr` = per-session Sharpe (mean / sample stdev of daily returns, **not** annualised) of the
-     chained test equity;
-   - `T` = number of daily returns; `g3` = sample skewness; `g4` = sample kurtosis (not excess);
-   - `V` = sample variance of the per-session training Sharpes of **every** grid variant in
-     **every** fold of this run (from the same daily returns used for `sharpe_rf0`, not
-     annualised). If fewer than 2 values exist or `V == 0`, the DSR is `null`;
-   - `N` = `variants_tried_total`;
-   - `SR0 = sqrt(V) × ((1 − γ) × Φ⁻¹(1 − 1/N) + γ × Φ⁻¹(1 − 1/(N·e)))`, with
-     γ = 0.5772156649 (Euler–Mascheroni) and e Euler's number;
-   - `DSR = Φ( (sr − SR0) × sqrt(T − 1) / sqrt(1 − g3·sr + (g4 − 1)/4 · sr²) )`;
-   - `null` when `N < 2`, `T < 3`, the stdev is 0, or the term under the root is ≤ 0.
-   - Numbers: do the arithmetic in `Decimal`. `Φ` and `Φ⁻¹` may use `statistics.NormalDist`
-     on a float conversion. This is the only float use; it must not touch money or prices, and
-     the result is formatted as a string with 4 decimals like the other metrics. Add a short
-     comment saying why.
-   - Tests: a hand-computed case (write the expected value in the test from a worked calculation
-     in a comment), `N = 1 → null`, `V = 0 → null`, more trials give a lower DSR, and symmetric
-     returns with zero skew match the closed form.
-2. The chained walk-forward summary gets `risk.deflated_sharpe` and `risk.sharpe_per_session`.
-3. **B0 Sharpe:** the B0 benchmark block gets `sharpe_rf0` from B0's daily equity, in both single
-   backtests and walk-forward.
-4. **Per-fold table:** each fold in `walkforward.json` already holds test metrics. Add a compact
-   top-level `fold_summary` list with, per fold: test `total_pct`, `trades.profit_factor`,
-   `activity.exposure_pct` and the selected grid point (`top_n`, `skip`).
+### C. Status bundle and daily report (document 13 §4.1, files only)
 
-### D. Docs
+Written under `state_dir` after every run, also when nothing new was recorded:
 
-- `docs/dev/setup.md` (or the research section that documents `walkforward`): the three new
-  options, with one example per v1.1 family:
-  1. baseline (no options, `--prior-variants 5`);
-  2. C1 (`--cash-proxy SHY`);
-  3. C2 (`--risk-per-trade-pct 1.0`);
-  4. C1+C2 (both options).
-  Say that C2 runs need the owner's approval (plan §1).
-- Document 12 §6: one line saying the deflated Sharpe is implemented (TASK-012), with the
-  formula's source.
+- `status/latest.json`: `state` (`NOT_STARTED`, `RUNNING` or `HALTED`) and reason; `as_of`
+  (clock); `start`; `last_session`; `sessions_recorded`; `data_end`; `data_stale` (true when
+  `data_end` is earlier than the last completed session before `as_of` by the exchange calendar);
+  equity in USD and JPY; return since start; max drawdown since start; open positions; the intents
+  waiting for the next session; B0 (SPY buy and hold from `start`) return since start; git commit.
+  No account IDs, no secrets.
+- `reports/daily/YYYY-MM-DD.json` and `.md` for each **newly recorded** session: equity and day
+  P&L, fills with fees, positions, next-session intents with reasons, rejections, and the
+  data-quality findings of that session if available. The Markdown is short and readable by a
+  non-engineer. Existing report files are never rewritten.
+- Writes are atomic (temporary file and rename).
+
+### D. CLI
+
+`aitrader paper run [--config config/paper.yaml] [--data-dir data/bars] [--state-dir data/paper]
+[--through YYYY-MM-DD] [--git-commit SHA]`. Exit codes: 0 success (including nothing new),
+2 configuration, 4 data, 5 usage, 6 paper mismatch. It prints one summary line (state, sessions
+added, last session, equity). The existing `aitrader live` behaviour is unchanged.
+
+### E. Docs
+
+- `docs/dev/setup.md`: a short "PAPER stage 1" section: daily routine for the operator
+  (`aitrader data fetch`, then `aitrader paper run`), what the status and reports mean, what to do
+  on exit 6 (stop, report, never delete the state), and that catching up after missed days is
+  automatic.
+
+## Tests (offline, fixtures only)
+
+1. First run over a fixture period records every session from `start` to `through`; the
+   snapshots equal the corresponding sessions of a plain `run_backtest` over the same period
+   (parity).
+2. Re-running with the same data inserts nothing, rewrites no daily report, exits 0.
+3. Running with a later `through` adds only the new sessions and verifies the earlier ones.
+4. A tampered `snapshot_hash` (or snapshot) in the database → `HALTED`, exit 6, nothing written.
+5. Changed strategy params, start, simulation value or risk limits → exit 6 with the message.
+6. `through` before `start` → `NOT_STARTED`, nothing recorded.
+7. `through` after `data_end` → usage error.
+8. A held lock → refused.
+9. A corporate action on a held position → `HALTED`, data-error exit, nothing recorded.
+10. Status fields, `data_stale` true and false with an injected clock, atomic writes, and report
+    content for one session with fills.
+11. BACKTEST settings: `simulation()` equals today's values; the fixture double run is
+    byte-identical to the pre-task output.
+12. Building the PAPER runner never imports `aitrader.broker.webull` (document 04 §4).
 
 ## Out of scope
 
-- Running the real-data research (the operator runs it after the merge, and the owner approves
-  C2 first).
-- Any change to `config/*.yaml`, `hard_caps.py`, `risk/` or the execution path.
-- Volatility-targeted sizing, new signals, universe changes.
+- Live quotes, intraday fills, `WallClock` scheduling, launchd/cron/cloud scheduling (each needs
+  the owner's approval when proposed), notifications, kill switch, heartbeat, Google Cloud.
+- Any change to strategy logic, risk limits or the execution path.
 
 ## Acceptance criteria
 
-1. With all new options absent, every existing test passes unchanged, and the fixture backtest
-   double run from `AGENTS.md` is byte-identical to before this task. Its run ID may change only
-   if the manifest gains fields; say so in LAST_REPORT if it does.
-2. Tests for each case listed in A, B and C. The override is refused above the hard cap and at
-   zero or below, and is recorded in the manifest.
-3. A fixture walk-forward with `--cash-proxy SHY --risk-per-trade-pct 1.0 --prior-variants 5`
-   runs on `tests/fixtures/bars`, if SHY is in the fixture set. If it is not, use a fixture
-   symbol and state which one. Its manifest shows both options and `variants_tried_total`.
-4. The DSR implementation matches the formula above (tests).
-5. All checks in `AGENTS.md` are green; coverage stays at 100% where it is 100% today and never
-   below 90% for any package.
-6. No change to protected paths or configuration files (`git diff --stat` in LAST_REPORT).
+1. All tests above, plus every existing test, pass; coverage stays 100% for every module that is
+   100% today and never below 90%.
+2. The fixture backtest double run is byte-identical to the pre-task output (manifest and run ID
+   included).
+3. A fixture run of `aitrader paper run` with a temporary config whose `paper.start` falls inside
+   the fixture data records sessions, and a second run adds none (commands and outputs summarised
+   in LAST_REPORT; temporary files outside the repository or removed).
+4. All checks in `AGENTS.md` are green.
+5. No change to protected paths (`git diff --stat` in LAST_REPORT).

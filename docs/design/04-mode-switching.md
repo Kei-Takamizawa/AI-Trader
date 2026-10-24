@@ -125,3 +125,24 @@ Durations are minimums. Promotion is never automatic.
 2. `aitrader paper` — PAPER virtual portfolio; needs the data-source key (Phase 3).
 3. `aitrader broker-test --target webull-sandbox` — adapter contract tests against the sandbox (allowed once the design is approved, Q10).
 4. `aitrader live` — only on the LIVE host; refuses to run unless LiveGuard passes. Until approval its configuration does not exist, so it always refuses.
+
+## 11. PAPER stage 1: daily replay on the operator Mac (TASK-013)
+
+Decision (designer, 2026-10-24, within the owner's phase choice "paper infrastructure + S1"):
+PAPER starts in stage 1 before any cloud host or live quote feed exists.
+
+| Item | Stage 1 | Target design (sections 1–2) |
+|---|---|---|
+| Where | Operator Mac, run by hand after `aitrader data fetch` | Cloud host `aitrader-paper`, scheduler |
+| Market data | Daily bars from the read-only data source (decision Q2) | Same, plus live quotes for the execution window |
+| Fills | Backtest fill model on the next session's daily bar (open, modelled spread, participation cap) | Live fill model against quotes |
+| Clock | Replay with `SimClock`; the wall clock only stamps records and checks staleness | `WallClock` |
+| Book | Replayed from `paper.start` on every run; recorded session snapshots must be reproduced exactly, otherwise HALTED | Persistent incremental state |
+
+Why replay: it uses the BACKTEST code path unchanged (the parity test of section 9 holds by
+construction), catches up automatically after days the Mac was asleep, and detects silent data
+revisions or code changes that would alter past days. The cost is a few seconds per run.
+
+Limits of stage 1: fills are no more realistic than the backtest's, and nothing runs while the
+Mac is asleep. Live quotes, scheduling, notifications, kill switch, heartbeat and the cloud host
+follow in later P3 tasks, each with the owner's approval where document 07 requires it.

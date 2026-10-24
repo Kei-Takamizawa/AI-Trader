@@ -115,7 +115,11 @@ def _format_validation_error(exc: ValidationError) -> str:
 
 
 def load_settings(
-    mode: Mode, config_dir: Path, environ: Mapping[str, str] | None = None
+    mode: Mode,
+    config_dir: Path,
+    environ: Mapping[str, str] | None = None,
+    *,
+    config_file: Path | None = None,
 ) -> Settings:
     """Load and validate the settings for ``mode`` from ``config_dir``."""
     if mode is Mode.LIVE:
@@ -124,7 +128,9 @@ def load_settings(
     assert_no_live_credentials(env, mode)
 
     base = _read_yaml(config_dir / "base.yaml")
-    override = _read_yaml(config_dir / f"{mode.value}.yaml")
+    override = _read_yaml(
+        config_file if config_file is not None else config_dir / f"{mode.value}.yaml"
+    )
     merged = _deep_merge(base, override)
     _reject_credential_keys(merged)
 

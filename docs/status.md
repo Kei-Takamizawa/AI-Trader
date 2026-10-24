@@ -26,6 +26,7 @@ in this build.
 | TASK-008 | Webull adapter (sandbox only) on the official SDK, contract tests, sandbox check | done (Codex cycle 4, review rounds 1–7, PR #6; owner approved the protected path) |
 | TASK-012 | S1 v1.1 research support: cash proxy, research-only risk override, deflated Sharpe | done (Codex cycle 5, PR #7) |
 | S1 v1.1 research | Four declared families on real data | done: `docs/research/2026-10-24-s1-v1.1-results.md`; no family passes, S1 stays at 1.0.0 |
+| TASK-013 | PAPER stage 1: local daily runner verified by replay (document 04 §11) | **in progress** (Codex cycle 6) |
 
 All of the above up to TASK-010 is on `main`: pull request
 [Kei-Takamizawa/AI-Trader#1](https://github.com/Kei-Takamizawa/AI-Trader/pull/1) was merged on
@@ -76,7 +77,9 @@ as the reference strategy, and research S1 1.1 in parallel.
    (`docs/research/2026-10-24-s1-v1.1-results.md`): S1 stays at 1.0.0 as the paper reference,
    risk per trade stays 0.5%. A new strategy idea needs its own declared plan; first add the
    neighbour test returns and the cost share to the walk-forward output.
-4. **P3 PAPER:** scheduler, live data adapter, virtual portfolio, reconciliation, kill switch,
+4. **P3 PAPER:** stage 1 (TASK-013, cycle 6) is a local daily runner on the operator Mac that
+   replays the book from `paper.start` (2026-10-26) and verifies recorded days (document 04 §11).
+   Later P3 tasks: scheduler, live data adapter, virtual portfolio, reconciliation, kill switch,
    heartbeat, notifications, daily report. Cloud deployment needs the owner's approval to create
    the Google Cloud project `aitrader-paper` (asked at that time).
 

@@ -195,3 +195,33 @@ SDK error code and latency; neither token content nor expiry value is recorded. 
 to the designer; offline tests establish request construction and mapping, while only this operator
 run establishes actual
 sandbox behaviour. SB-4 event streaming and SB-5 market data/fill realism remain out of scope.
+
+## PAPER stage 1
+
+After the latest market session has closed, the operator updates the local bars, then runs
+our virtual portfolio:
+
+```bash
+uv run aitrader data fetch --end YYYY-MM-DD
+uv run aitrader paper run
+```
+
+The first command needs the operator's read-only data credentials. The second runs offline
+with S1 1.0.0 and the same daily-bar fill model as BACKTEST. Nothing is scheduled: after missed
+days, the next run catches up automatically. Repeating a run with unchanged data adds nothing.
+Use `--through YYYY-MM-DD` to replay through an earlier date; later recorded sessions remain
+intact. `--config`, `--data-dir`, `--state-dir` and `--git-commit` override the default paths
+and source provenance.
+
+`data/paper/paper.db` is the session history. `data/paper/status/latest.json` shows whether the
+book is NOT_STARTED, RUNNING or HALTED, data freshness against the exchange calendar, USD/JPY
+equity, returns, drawdown, positions, pending intents and the SPY buy-and-hold comparison.
+Returns and drawdown are fractions (0.01 means 1%). The fixed JPY rate is a reporting assumption.
+A short JSON and Markdown report for each new session appears under `data/paper/reports/daily/`;
+existing reports are never rewritten. Fills are modelled, not actual broker executions.
+
+Exit codes: 0 success (also no new sessions), 2 configuration, 4 data error, 5 usage or a held
+lock, 6 replay/book mismatch. **On exit 6, stop and report the status and affected session to
+the designer; never delete the state.** Changing the book's start, strategy parameters,
+simulation assumptions or risk limits requires a new state directory after review. A changed
+historical snapshot halts the book before any new session is recorded.

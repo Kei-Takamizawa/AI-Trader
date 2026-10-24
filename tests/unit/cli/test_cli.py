@@ -37,7 +37,8 @@ def test_config_validate_reports_errors_with_exit_code_2(tmp_path: Path) -> None
     target = tmp_path / "config"
     shutil.copytree(REPO_CONFIG, target)
     (target / "paper.yaml").write_text(
-        "mode: paper\nbroker_environment: sim\npaper: {}\nrisk:\n  max_drawdown_pct: 50\n",
+        "mode: paper\nbroker_environment: sim\npaper: {start: 2026-10-26}\n"
+        "risk:\n  max_drawdown_pct: 50\n",
         encoding="utf-8",
     )
     result = runner.invoke(

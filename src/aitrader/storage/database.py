@@ -82,6 +82,25 @@ SCHEMA: tuple[tuple[str, ...], ...] = (
             report_json TEXT NOT NULL
         )""",
     ),
+    (
+        """CREATE TABLE paper_book (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            start TEXT NOT NULL,
+            strategy_id TEXT NOT NULL,
+            strategy_version TEXT NOT NULL,
+            params_hash TEXT NOT NULL,
+            simulation TEXT NOT NULL,
+            risk_hash TEXT NOT NULL
+        )""",
+        """CREATE TABLE paper_sessions (
+            session TEXT PRIMARY KEY,
+            snapshot_json TEXT NOT NULL,
+            snapshot_hash TEXT NOT NULL,
+            recorded_at TEXT NOT NULL,
+            git_commit TEXT NOT NULL,
+            data_snapshot_hash TEXT NOT NULL
+        )""",
+    ),
 )
 """Migrations: ``SCHEMA[n]`` takes the database from version ``n`` to ``n + 1``."""
 

@@ -19,9 +19,10 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_EVEN, Decimal
 
+from aitrader.backtest.snapshots import PositionSnapshot, SessionFill, SessionSnapshot
 from aitrader.broker.sim import SimBroker
 from aitrader.clock import SimClock, TradingCalendar
-from aitrader.config import Settings
+from aitrader.config import Settings, SimulationSettings
 from aitrader.data import (
     CorporateActionError,
     CorporateActionKind,
@@ -38,12 +39,13 @@ from aitrader.domain import (
     Money,
     OrderIntent,
     Quote,
+    Verdict,
 )
 from aitrader.execution import InMemoryOrderStore, OrderErrorMonitor, OrderGate, OrderManager
 from aitrader.fees import WEBULL_JP, ExecutionAssumptions
 from aitrader.metrics import EquityPoint
 from aitrader.ops import CycleSettings, TradingCycle
-from aitrader.portfolio import Ledger
+from aitrader.portfolio import Account, Ledger
 from aitrader.risk import HaltStateMachine, RiskEngine, round_down
 from aitrader.strategy import Strategy, StrategyContext
 
@@ -71,6 +73,7 @@ class BacktestResult:
     corporate_actions: PointInTimeBars | None = None
     fills: list[FillRecord] = field(default_factory=list)
     intents: list[OrderIntent] = field(default_factory=list)
+    sessions: list[SessionSnapshot] = field(default_factory=list)
 
     @property
     def traded_notional_usd(self) -> Decimal:
@@ -100,12 +103,15 @@ def run_backtest(
     end: date | None = None,
     calendar: TradingCalendar | None = None,
     point_in_time: PointInTimeBars | None = None,
+    simulation: SimulationSettings | None = None,
 ) -> BacktestResult:
     """Replay raw executions; dividend cash settles on ex-date rather than actual pay date."""
     pit = point_in_time or PointInTimeBars(source, adjusted)
-    bt = settings.require_backtest()
+    bt = simulation if simulation is not None else settings.require_backtest().simulation()
+    first = start if start is not None else settings.require_backtest().start
+    last = end if end is not None else settings.require_backtest().end
     calendar = calendar or TradingCalendar()
-    sessions = calendar.sessions(start or bt.start, end or bt.end)
+    sessions = calendar.sessions(first, last)
     if not sessions:
         raise ValueError("the backtest period contains no sessions")
     clock = SimClock(calendar.session_open(sessions[0]) - timedelta(hours=1))
@@ -170,6 +176,8 @@ def run_backtest(
         cycle.sync()
 
     for session in sessions:
+        decisions_before = len(cycle.decisions)
+        skipped_before = len(cycle.skipped)
         opens = calendar.session_open(session)
         clock.set(opens)
         broker.settle(session)
@@ -280,4 +288,41 @@ def run_backtest(
             equity_usd=equity,
         )
         pending = strategy.evaluate(context)
+        result.sessions.append(
+            SessionSnapshot(
+                session=session,
+                equity_usd=equity,
+                cash_usd_settled=ledger.cash_usd_settled,
+                cash_usd_unsettled=ledger.cash_usd_unsettled,
+                positions=tuple(
+                    PositionSnapshot(
+                        symbol=symbol,
+                        quantity=pos.quantity,
+                        average_cost=pos.average_cost,
+                        close=last_close[symbol],
+                        market_value_usd=pos.quantity * last_close[symbol],
+                    )
+                    for symbol, pos in sorted(ledger.positions.items())
+                ),
+                fills=tuple(
+                    SessionFill(
+                        fill=entry.fill, fees_usd=entry.total(Account.TRADING_FEES, Currency.USD)
+                    )
+                    for entry in ledger.entries
+                    if entry.ts.date() == session and entry.fill is not None
+                ),
+                next_intents=tuple(pending),
+                rejections=tuple(
+                    decision
+                    for decision in cycle.decisions[decisions_before:]
+                    if decision.verdict is Verdict.REJECT
+                ),
+                skipped=tuple(item.reason for item in cycle.skipped[skipped_before:]),
+                data_quality={
+                    symbol: tuple(sorted(findings))
+                    for symbol, history in histories.items()
+                    if (findings := DataQualityGate(calendar).findings(history, session))
+                },
+            )
+        )
     return result
