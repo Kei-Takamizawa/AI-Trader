@@ -10,7 +10,7 @@ import json
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from itertools import pairwise
 from pathlib import Path
@@ -128,10 +128,11 @@ def fetch_universe(
     end: date,
     out_dir: Path,
     calendar: TradingCalendar,
+    now: datetime,
 ) -> FetchReport:
     """Download, store, check and report; the report is also written to ``fetch_report.json``."""
-    raw = client.daily_bars(symbols, start, end, adjustment="raw")
-    adjusted = client.daily_bars(symbols, start, end, adjustment="all")
+    raw = client.daily_bars(symbols, start, end, now, adjustment="raw")
+    adjusted = client.daily_bars(symbols, start, end, now, adjustment="all")
     reports: dict[str, SymbolReport] = {}
     for symbol in symbols:
         raw_rows, adjusted_rows = raw[symbol], adjusted[symbol]

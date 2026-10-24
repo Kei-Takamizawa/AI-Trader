@@ -53,7 +53,13 @@ They are set only on the operator PC, as user environment variables (see `CLAUDE
 this command; tests never need the key. It only sends GET requests to `data.alpaca.markets`. It writes `data/bars/raw/` (traded prices),
 `data/bars/adjusted/` (adjusted for splits and distributions) and `data/bars/fetch_report.json`
 (rows, missing sessions, large moves, corporate actions, snapshot hashes). `data/` is never
-committed. Exit codes: 2 missing key or invalid universe, 4 data source error (401, 403 = DATA-3).
+committed. `--end` accepts the latest session whose calendar close is at least 16 minutes
+before the CLI clock, including half days. A non-session or a more recent close is refused
+with exit code 2 and the last closed session in the message. Historical SIP queries send UTC
+timestamps, with `end` capped at the earlier of 23:59:59 UTC on that date and now minus
+16 minutes, to respect the free-plan delay.
+Exit codes: 2 missing key, invalid universe or invalid end session; 4 data source error
+(401, 403 = DATA-3).
 
 Backtests accept the fetched layout (both `raw/` and `adjusted/` are required):
 
@@ -97,3 +103,7 @@ to the last 24 months. Override these with `--train-months`, `--test-months`, an
 fold, the chained test equity curve and its return/risk metrics, and the SPY buy-and-hold
 benchmark over those same test sessions. `manifest.yaml` records the commit, configuration,
 parameter grid, data snapshots, corporate-action counts and hold-out boundary.
+
+Both `backtest` and `walkforward` accept `--git-commit <commit>` to record an explicit commit.
+Otherwise they look up HEAD using Git on PATH. If that lookup fails, `backtest` records
+`unknown`; `walkforward` exits with code 4 and asks for `--git-commit`.

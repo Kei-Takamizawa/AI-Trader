@@ -3,7 +3,7 @@
 import re
 import threading
 import urllib.parse
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
@@ -18,6 +18,7 @@ from tests.unit.data.alpaca_fakes import FakeTransport, bar, page, status
 KEY = SecretStr("key-id")
 SECRET = SecretStr("secret-key")
 START, END = date(2024, 1, 2), date(2024, 1, 3)
+NOW = datetime(2024, 1, 4, 12, tzinfo=UTC)
 
 
 def client(transport: FakeTransport, **kw: Any) -> AlpacaDataClient:
@@ -37,7 +38,7 @@ SPY_PAGE = page(
 
 def test_request_shape_and_headers() -> None:
     transport = FakeTransport([SPY_PAGE])
-    result = client(transport).daily_bars(["SPY", "QQQ"], START, END, adjustment="all")
+    result = client(transport).daily_bars(["SPY", "QQQ"], START, END, NOW, adjustment="all")
     url, headers, timeout = transport.requests[0]
     parts = urllib.parse.urlsplit(url)
     query = dict(urllib.parse.parse_qsl(parts.query))
@@ -49,8 +50,8 @@ def test_request_shape_and_headers() -> None:
     assert query == {
         "symbols": "QQQ,SPY",
         "timeframe": "1Day",
-        "start": "2024-01-02",
-        "end": "2024-01-03",
+        "start": "2024-01-02T00:00:00Z",
+        "end": "2024-01-03T23:59:59Z",
         "adjustment": "all",
         "feed": "sip",
         "limit": "10000",
@@ -65,7 +66,7 @@ def test_request_shape_and_headers() -> None:
 
 
 def test_prices_are_exact_decimals() -> None:
-    (first, _) = client(FakeTransport([SPY_PAGE])).daily_bars(["SPY"], START, END)["SPY"]
+    (first, _) = client(FakeTransport([SPY_PAGE])).daily_bars(["SPY"], START, END, NOW)["SPY"]
     assert first.close == Decimal("472.65")
     assert first.open == Decimal("472.16")
     assert first.volume == Decimal(123007793)
@@ -83,7 +84,7 @@ def test_all_pages_are_read() -> None:
             page({"SPY": [bar("2024-01-02T05:00:00Z", "2", "2", "2", "2", 2)]}),
         ]
     )
-    result = client(transport).daily_bars(["SPY", "QQQ"], START, END)
+    result = client(transport).daily_bars(["SPY", "QQQ"], START, END, NOW)
     assert len(transport.requests) == 2
     assert "page_token=abc" in transport.requests[1][0]
     assert (len(result["QQQ"]), len(result["SPY"])) == (1, 1)
@@ -117,25 +118,25 @@ def test_client_settings_are_checked(kw: dict[str, int]) -> None:
 def test_request_arguments_are_checked() -> None:
     c = client(FakeTransport([]))
     with pytest.raises(ValueError, match="adjustment"):
-        c.daily_bars(["SPY"], START, END, adjustment="weird")
+        c.daily_bars(["SPY"], START, END, NOW, adjustment="weird")
     with pytest.raises(ValueError, match="before start"):
-        c.daily_bars(["SPY"], END, START)
+        c.daily_bars(["SPY"], END, START, NOW)
 
 
 def test_rate_limits_and_server_errors_are_retried_with_backoff() -> None:
     sleeps: list[float] = []
     transport = FakeTransport([status(429), status(503), ConnectionError("reset"), SPY_PAGE])
-    result = client(transport, sleeps=sleeps).daily_bars(["SPY"], START, END)
+    result = client(transport, sleeps=sleeps).daily_bars(["SPY"], START, END, NOW)
     assert len(result["SPY"]) == 2
     assert sleeps == [1.0, 2.0, 4.0]
 
 
 def test_retries_end_after_the_last_attempt() -> None:
     with pytest.raises(DataSourceError, match="HTTP 500"):
-        client(FakeTransport([status(500)] * 4)).daily_bars(["SPY"], START, END)
+        client(FakeTransport([status(500)] * 4)).daily_bars(["SPY"], START, END, NOW)
     with pytest.raises(DataSourceError, match="request failed"):
         client(FakeTransport([ConnectionError("request failed: down")] * 4)).daily_bars(
-            ["SPY"], START, END
+            ["SPY"], START, END, NOW
         )
 
 
@@ -151,7 +152,7 @@ def test_retries_end_after_the_last_attempt() -> None:
 def test_client_errors_are_not_retried(code: int, error: type[Exception]) -> None:
     transport = FakeTransport([status(code, "nope")])
     with pytest.raises(error, match="nope"):
-        client(transport).daily_bars(["SPY"], START, END)
+        client(transport).daily_bars(["SPY"], START, END, NOW)
     assert len(transport.requests) == 1
 
 
@@ -167,12 +168,12 @@ def test_client_errors_are_not_retried(code: int, error: type[Exception]) -> Non
 )
 def test_unusable_responses_are_refused(response: HttpResponse, message: str) -> None:
     with pytest.raises(DataSourceError, match=message):
-        client(FakeTransport([response])).daily_bars(["SPY"], START, END)
+        client(FakeTransport([response])).daily_bars(["SPY"], START, END, NOW)
 
 
 def test_empty_bars_are_allowed() -> None:
     result = client(FakeTransport([HttpResponse(200, b'{"bars": null, "next_page_token": null}')]))
-    assert result.daily_bars(["SPY"], START, END) == {"SPY": []}
+    assert result.daily_bars(["SPY"], START, END, NOW) == {"SPY": []}
 
 
 # ---------------------------------------------------------------- the real transport, locally
@@ -204,3 +205,28 @@ def test_urllib_transport_against_a_local_server() -> None:
         server.server_close()
     with pytest.raises(ConnectionError, match="request failed"):
         urllib_transport(f"{base}/ok", {}, 1)  # nothing listens any more
+
+
+@pytest.mark.parametrize(
+    ("now", "expected"),
+    [
+        ("2024-01-03T21:16:00Z", "2024-01-03T21:00:00Z"),
+        ("2024-01-04T00:15:58Z", "2024-01-03T23:59:58Z"),
+        ("2024-01-04T00:15:59Z", "2024-01-03T23:59:59Z"),
+        ("2024-01-04T00:16:00Z", "2024-01-03T23:59:59Z"),
+        ("2024-01-03T21:16:00.999999Z", "2024-01-03T21:00:00Z"),
+    ],
+)
+def test_end_timestamp_caps(now: str, expected: str) -> None:
+    transport = FakeTransport([SPY_PAGE])
+    client(transport).daily_bars(["SPY"], START, END, datetime.fromisoformat(now))
+    query = urllib.parse.urlsplit(transport.requests[0][0]).query
+    assert f"start={urllib.parse.quote('2024-01-02T00:00:00Z', safe='')}" in query
+    assert f"end={urllib.parse.quote(expected, safe='')}" in query
+
+
+def test_naive_now_is_refused_without_a_request() -> None:
+    transport = FakeTransport([])
+    with pytest.raises(ValueError, match="timezone"):
+        client(transport).daily_bars(["SPY"], START, END, NOW.replace(tzinfo=None))
+    assert transport.requests == []

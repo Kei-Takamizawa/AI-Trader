@@ -13,12 +13,14 @@ import urllib.parse
 import urllib.request
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from pydantic import SecretStr
+
+from aitrader.domain.types import require_utc
 
 ALLOWED_HOST = "data.alpaca.markets"
 DEFAULT_BASE_URL = f"https://{ALLOWED_HOST}"
@@ -115,6 +117,7 @@ class AlpacaDataClient:
         symbols: Sequence[str],
         start: date,
         end: date,
+        now: datetime,
         *,
         adjustment: str = "raw",
         feed: str = "sip",
@@ -124,12 +127,16 @@ class AlpacaDataClient:
             raise ValueError(f"adjustment must be one of {sorted(ADJUSTMENTS)}")
         if end < start:
             raise ValueError("end must not be before start")
+        cutoff = min(
+            datetime.combine(end, datetime.min.time(), UTC).replace(hour=23, minute=59, second=59),
+            require_utc(now) - timedelta(minutes=16),
+        )
         result: dict[str, list[DailyBarRow]] = {symbol: [] for symbol in symbols}
         params = {
             "symbols": ",".join(sorted(set(symbols))),
             "timeframe": "1Day",
-            "start": start.isoformat(),
-            "end": end.isoformat(),
+            "start": f"{start.isoformat()}T00:00:00Z",
+            "end": cutoff.isoformat(timespec="seconds").replace("+00:00", "Z"),
             "adjustment": adjustment,
             "feed": feed,
             "limit": str(self._page_limit),
