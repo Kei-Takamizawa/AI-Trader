@@ -231,5 +231,5 @@ def test_schema_1_databases_are_migrated(tmp_path: Path) -> None:
     conn.commit()
     conn.close()
     with Database(path) as db:
-        assert db.schema_version == 2
+        assert db.schema_version == len(SCHEMA)
         assert ReconciliationLog(db).all() == []

@@ -46,6 +46,7 @@ def test_unmodified_project_keeps_all_contracts(tmp_path: Path) -> None:
     ("module", "statement"),
     [
         ("risk/__init__.py", "import aitrader.ai"),
+        ("app/paper.py", "import aitrader.broker.webull"),
         ("execution/__init__.py", "from aitrader import ai"),
         ("strategy/__init__.py", "import aitrader.broker"),
         ("domain/money.py", "import aitrader.config"),

@@ -36,14 +36,15 @@ def test_repository_configs_load(mode: Mode) -> None:
 def test_layering_mode_file_overrides_base(config_dir: Path) -> None:
     _write(
         config_dir / "paper.yaml",
-        "mode: paper\nbroker_environment: sim\npaper:\n  virtual_capital_jpy: 40000\n"
+        "mode: paper\nbroker_environment: sim\npaper:\n  start: 2026-10-26\n"
+        "  initial_capital_usd: 300\n"
         "risk:\n  risk_per_trade_pct: 0.25\n",
     )
     settings = load_settings(Mode.PAPER, config_dir, environ={})
     assert str(settings.risk.risk_per_trade_pct) == "0.25"
     assert str(settings.risk.daily_loss_limit_pct) == "1.5"  # still from base.yaml
     assert settings.paper is not None
-    assert str(settings.paper.virtual_capital_jpy) == "40000"
+    assert str(settings.paper.initial_capital_usd) == "300"
 
 
 def test_live_cannot_be_loaded(config_dir: Path) -> None:
@@ -54,7 +55,8 @@ def test_live_cannot_be_loaded(config_dir: Path) -> None:
 def test_limit_above_hard_cap_is_rejected(config_dir: Path) -> None:
     _write(
         config_dir / "paper.yaml",
-        "mode: paper\nbroker_environment: sim\npaper: {}\nrisk:\n  risk_per_trade_pct: 2.0\n",
+        "mode: paper\nbroker_environment: sim\npaper: {start: 2026-10-26}\n"
+        "risk:\n  risk_per_trade_pct: 2.0\n",
     )
     with pytest.raises(ConfigError, match=r"risk\.risk_per_trade_pct = 2\.0 exceeds the hard cap"):
         load_settings(Mode.PAPER, config_dir, environ={})
@@ -70,27 +72,37 @@ def test_limit_above_hard_cap_is_rejected(config_dir: Path) -> None:
     ],
 )
 def test_credential_like_keys_are_rejected(config_dir: Path, extra: str) -> None:
-    _write(config_dir / "paper.yaml", "mode: paper\nbroker_environment: sim\npaper: {}\n" + extra)
+    _write(
+        config_dir / "paper.yaml",
+        "mode: paper\nbroker_environment: sim\npaper: {start: 2026-10-26}\n" + extra,
+    )
     with pytest.raises(ConfigError, match="credential-like key"):
         load_settings(Mode.PAPER, config_dir, environ={})
 
 
 def test_unknown_fields_are_rejected(config_dir: Path) -> None:
-    _write(config_dir / "paper.yaml", "mode: paper\nbroker_environment: sim\npaper: {}\nfoo: 1\n")
+    _write(
+        config_dir / "paper.yaml",
+        "mode: paper\nbroker_environment: sim\npaper: {start: 2026-10-26}\nfoo: 1\n",
+    )
     with pytest.raises(ConfigError, match="foo"):
         load_settings(Mode.PAPER, config_dir, environ={})
 
 
 def test_paper_cannot_target_webull(config_dir: Path) -> None:
     _write(
-        config_dir / "paper.yaml", "mode: paper\nbroker_environment: webull_sandbox\npaper: {}\n"
+        config_dir / "paper.yaml",
+        "mode: paper\nbroker_environment: webull_sandbox\npaper: {start: 2026-10-26}\n",
     )
     with pytest.raises(ConfigError, match="must use broker environment sim"):
         load_settings(Mode.PAPER, config_dir, environ={})
 
 
 def test_mode_mismatch_is_rejected(config_dir: Path) -> None:
-    _write(config_dir / "paper.yaml", "mode: backtest\nbroker_environment: sim\npaper: {}\n")
+    _write(
+        config_dir / "paper.yaml",
+        "mode: backtest\nbroker_environment: sim\npaper: {start: 2026-10-26}\n",
+    )
     with pytest.raises(ConfigError, match="declares mode"):
         load_settings(Mode.PAPER, config_dir, environ={})
 
@@ -123,14 +135,16 @@ def test_hash_is_stable_and_ignores_key_order_and_spelling(config_dir: Path) -> 
 
     _write(
         config_dir / "paper.yaml",
-        "paper:\n  virtual_capital_jpy: 50000.00\nbroker_environment: sim\nmode: paper\n"
+        "paper:\n  start: 2026-10-26\n  initial_capital_usd: 323.00\n"
+        "broker_environment: sim\nmode: paper\n"
         "data:\n  provider: alpaca\n",
     )
     assert config_hash(load_settings(Mode.PAPER, config_dir, environ={})) == first
 
     _write(
         config_dir / "paper.yaml",
-        "mode: paper\nbroker_environment: sim\npaper:\n  virtual_capital_jpy: 49999\n"
+        "mode: paper\nbroker_environment: sim\npaper:\n  start: 2026-10-26\n"
+        "  initial_capital_usd: 322\n"
         "data:\n  provider: alpaca\n",
     )
     assert config_hash(load_settings(Mode.PAPER, config_dir, environ={})) != first

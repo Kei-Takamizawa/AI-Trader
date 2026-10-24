@@ -12,15 +12,14 @@ from typing import Annotated
 
 import typer
 
+from aitrader.app.paper import EXIT_PAPER_MISMATCH as EXIT_PAPER_MISMATCH
+from aitrader.app.paper import halt_data_failure, run_paper
 from aitrader.backtest import build_manifest, metrics_for, run_backtest, write_results
 from aitrader.backtest.walkforward import (
     run_walkforward,
     validate_research_options,
     write_walkforward,
 )
-from aitrader.broker.webull import SandboxCredentials, WebullBroker
-from aitrader.broker.webull.check import SandboxCheck, write_auth_failure
-from aitrader.broker.webull.sdk import TokenInitializationError
 from aitrader.clock import CalendarError, TradingCalendar, WallClock
 from aitrader.config import (
     ConfigError,
@@ -40,6 +39,7 @@ from aitrader.data import (
     fetch_universe,
 )
 from aitrader.domain import Mode
+from aitrader.storage import InstanceLockedError
 from aitrader.strategy import STRATEGIES
 
 EXIT_CONFIG_ERROR = 2
@@ -59,6 +59,8 @@ data_app = typer.Typer(help="Market data commands (read-only).", no_args_is_help
 app.add_typer(data_app, name="data")
 sandbox_app = typer.Typer(help="Operator-only Webull UAT checks.")
 app.add_typer(sandbox_app, name="sandbox")
+paper_app = typer.Typer(help="Local daily PAPER replay.", no_args_is_help=True)
+app.add_typer(paper_app, name="paper")
 
 
 def _version() -> str:
@@ -319,6 +321,10 @@ def sandbox_check(
     ),
 ) -> None:
     """Probe shared sandbox accounts. Only the operator runs this against Webull."""
+    from aitrader.broker.webull import SandboxCredentials, WebullBroker
+    from aitrader.broker.webull.check import SandboxCheck, write_auth_failure
+    from aitrader.broker.webull.sdk import TokenInitializationError
+
     try:
         credentials = SandboxCredentials()
         settings = load_webull_sandbox_settings(config_dir)
@@ -344,3 +350,50 @@ def sandbox_check(
         broker.close()
     typer.echo(f"sandbox report: {path}")
     raise typer.Exit(exit_code)
+
+
+@paper_app.command("run")
+def paper_run(
+    config: Annotated[
+        Path, typer.Option(help="PAPER YAML; base.yaml is read alongside it.")
+    ] = Path("config/paper.yaml"),
+    data_dir: Annotated[Path, typer.Option(help="Local daily bars.")] = Path("data/bars"),
+    state_dir: Annotated[Path, typer.Option(help="Persistent PAPER book and reports.")] = Path(
+        "data/paper"
+    ),
+    through: Annotated[str | None, typer.Option(help="Last session (YYYY-MM-DD).")] = None,
+    git_commit: Annotated[str | None, typer.Option(help="Source commit provenance.")] = None,
+) -> None:
+    """Verify recorded sessions and catch up a dedicated virtual portfolio."""
+    try:
+        settings = load_settings(Mode.PAPER, config.parent, config_file=config)
+    except ConfigError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(EXIT_CONFIG_ERROR) from exc
+    try:
+        last = date.fromisoformat(through) if through is not None else None
+    except ValueError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(EXIT_USAGE_ERROR) from exc
+    clock = WallClock()
+    try:
+        commit = _git_commit(git_commit)
+        try:
+            source, adjusted = _bar_sources(data_dir, TradingCalendar())
+        except DataError as exc:
+            result = halt_data_failure(settings, state_dir, clock, commit, str(exc))
+        else:
+            result = run_paper(settings, source, adjusted, state_dir, last, clock, commit)
+    except InstanceLockedError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(EXIT_USAGE_ERROR) from exc
+    except DataError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(EXIT_DATA_ERROR) from exc
+    status = result.status
+    typer.echo(
+        f"{status.state} sessions_added={result.sessions_added} "
+        f"last_session={status.last_session} equity_usd={status.equity_usd}"
+        + (f" reason={status.reason}" if result.exit_code else "")
+    )
+    raise typer.Exit(result.exit_code)

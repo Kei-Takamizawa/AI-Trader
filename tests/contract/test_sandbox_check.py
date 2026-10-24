@@ -204,8 +204,8 @@ def test_cli_fake_transport_reports_and_exit_codes(
         fake.queue("positions", {}, 403)
     for name, value in ENV.items():
         monkeypatch.setenv(name, value)
-    monkeypatch.setattr(cli, "WebullBroker", lambda *args, **kwargs: check.broker)
-    monkeypatch.setattr(cli, "SandboxCheck", lambda *args: check)
+    monkeypatch.setattr("aitrader.broker.webull.WebullBroker", lambda *args, **kwargs: check.broker)
+    monkeypatch.setattr("aitrader.broker.webull.check.SandboxCheck", lambda *args: check)
     result = CliRunner().invoke(cli.app, ["sandbox", "check", "--out-dir", str(tmp_path)])
     assert result.exit_code == 1, result.output
     assert "sandbox report" in result.output

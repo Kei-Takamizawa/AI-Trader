@@ -316,3 +316,9 @@ source_modules = [
 ]
 forbidden_modules = ["exchange_calendars", "pandas"]
 allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "PAPER replay never imports the Webull adapter or SDK"
+type = "forbidden"
+source_modules = ["aitrader.app.paper", "aitrader.app.paper_reports"]
+forbidden_modules = ["aitrader.broker.webull", "webull"]

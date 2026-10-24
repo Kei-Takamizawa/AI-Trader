@@ -378,8 +378,7 @@ def test_cli_success_reports_only_token_facts(
         monkeypatch.setenv(name, value)
     monkeypatch.setattr(cli, "WallClock", lambda: http.clock)
     monkeypatch.setattr(
-        cli,
-        "SandboxCheck",
+        "aitrader.broker.webull.check.SandboxCheck",
         lambda broker, clock: SandboxCheck(broker, clock, wait=lambda seconds: None),
     )
     result = CliRunner().invoke(cli.app, ["sandbox", "check", "--out-dir", str(tmp_path)])

@@ -15,6 +15,7 @@ from aitrader.config.settings import (
     RiskLimits,
     Secrets,
     Settings,
+    SimulationSettings,
 )
 from aitrader.config.universe import Universe, load_universe
 
@@ -28,6 +29,7 @@ __all__ = [
     "RiskLimits",
     "Secrets",
     "Settings",
+    "SimulationSettings",
     "Universe",
     "assert_no_live_credentials",
     "config_hash",

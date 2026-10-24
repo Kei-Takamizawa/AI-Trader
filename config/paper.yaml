@@ -1,10 +1,17 @@
-# PAPER: our own virtual portfolio on live market data. The simulator fills the orders.
-# Needs AITRADER_DATA_API_KEY / AITRADER_DATA_API_SECRET (read-only data source, decision Q2).
+# PAPER stage 1: local daily bars, replayed through the backtest simulator.
+# Fetching data is a separate operator action; this runner needs no credentials or network.
 mode: paper
 broker_environment: sim
 
 paper:
-  virtual_capital_jpy: 50000
+  start: 2026-10-26
+  initial_capital_usd: 323         # USD book; initial JPY equivalent is 323 * 155 = 50,065
+  fx_jpy_per_usd: 155              # fixed reporting rate, as in BACKTEST
+  half_spread_bps: 1
+  max_participation_pct: 1
+  # Same withholding assumptions as BACKTEST (confirm with broker tax documents).
+  dividend_us_withholding_pct: 10
+  dividend_jp_withholding_pct: 20.315
 
 data:
   provider: alpaca
