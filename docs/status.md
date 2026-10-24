@@ -24,6 +24,7 @@ in this build.
 | TASK-007c | Research report on real data | done: `docs/research/2026-10-24-p2-walkforward.md`; S1 and S2 no-go for LIVE |
 | TASK-011 | Free-plan daily data fetch, commit lookup, SQLite warning | done (Codex cycle 3, PR #5) |
 | TASK-008 | Webull adapter (sandbox only) on the official SDK, contract tests, sandbox check | done (Codex cycle 4, review rounds 1–7, PR #6; owner approved the protected path) |
+| TASK-012 | S1 v1.1 research support: cash proxy, research-only risk override, deflated Sharpe | **in progress** (Codex cycle 5) |
 
 All of the above up to TASK-010 is on `main`: pull request
 [Kei-Takamizawa/AI-Trader#1](https://github.com/Kei-Takamizawa/AI-Trader/pull/1) was merged on
@@ -69,7 +70,10 @@ as the reference strategy, and research S1 1.1 in parallel.
 2. Done (TASK-008, PR #6): sandbox-only Webull adapter on `webull-openapi-python-sdk==3.0.4`,
    broker contract tests and `aitrader sandbox check`. On 2026-10-24, a real sandbox run passed 10 of 11 checks
    (document 14 §8.1). The follow-ups are listed under open items.
-3. **S1 1.1 research plan:** changes declared before any run, each counted as a variant.
+3. **S1 1.1 research (cycle 5):** plan declared in `docs/research/2026-10-24-s1-v1.1-plan.md`
+   (C1 cash proxy SHY, C2 risk per trade 1.0% for research only, needs the owner's approval;
+   17 variants in total; pass rules fixed). TASK-012 adds the code; the operator runs the four
+   families after the merge.
 4. **P3 PAPER:** scheduler, live data adapter, virtual portfolio, reconciliation, kill switch,
    heartbeat, notifications, daily report. Cloud deployment needs the owner's approval to create
    the Google Cloud project `aitrader-paper` (asked at that time).
