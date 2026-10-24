@@ -29,7 +29,7 @@ in this build.
 | TASK-013 | PAPER stage 1: local daily runner verified by replay (document 04 §11) | done (Codex cycle 6, PR #9) |
 | TASK-014 | Strategy S3 (plan `docs/research/2026-10-24-s3-plan.md`), neighbour stability, cost share, faster backtests | done (Codex cycle 7, PR #10) |
 | S3 research | S3 and S3-R1 on real data (N = 25) | done: `docs/research/2026-10-24-s3-results.md`; neither passes (S3 fails only the deflated Sharpe, 0.58 < 0.80) |
-| TASK-015 | S3 as a PAPER observation book next to S1 (owner decision 2026-10-24; not a candidate) | **in progress** (Codex cycle 8) |
+| TASK-015 | S3 as a PAPER observation book next to S1 (owner decision 2026-10-24; not a candidate) | done (Codex cycle 8, PR #12); both books start after the first closed session on or after 2026-10-26 |
 
 All of the above up to TASK-010 is on `main`: pull request
 [Kei-Takamizawa/AI-Trader#1](https://github.com/Kei-Takamizawa/AI-Trader/pull/1) was merged on
@@ -82,6 +82,9 @@ as the reference strategy, and research S1 1.1 in parallel.
    neighbour test returns and the cost share to the walk-forward output.
 4. **P3 PAPER:** stage 1 (TASK-013, cycle 6) is a local daily runner on the operator Mac that
    replays the book from `paper.start` (2026-10-26) and verifies recorded days (document 04 §11).
+   Two books (TASK-015): S1 reference in `data/paper` and S3 observation in `data/paper-s3`
+   (commands in `docs/dev/setup.md`). From the first closed session on or after 2026-10-26 the
+   operator runs `data fetch` and both books by hand each trading day.
    Later P3 tasks: scheduler, live data adapter, virtual portfolio, reconciliation, kill switch,
    heartbeat, notifications, daily report. Cloud deployment needs the owner's approval to create
    the Google Cloud project `aitrader-paper` (asked at that time).
