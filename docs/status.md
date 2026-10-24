@@ -78,6 +78,9 @@ as the reference strategy, and research S1 1.1 in parallel.
 
 - `tests/unit/data/test_alpaca.py::test_urllib_transport_against_a_local_server` leaves an
   `HTTPError` unclosed (a `ResourceWarning` under `-W error`); harmless, fix with the next data task.
+- `pyproject.toml` pins `build_system.requires = ["uv-build>=0.11.0,<0.12"]`; uv 0.12.1 on the
+  operator Mac warns about it (seen in TASK-008). Raise the bound in a small later task after
+  checking the uv-build release notes.
 
 - **Secret scanning in CI** is required by document 06 §5 but not in place yet. The tool must be
   chosen (free options first; anything paid needs the owner's approval). Until then the reviewer

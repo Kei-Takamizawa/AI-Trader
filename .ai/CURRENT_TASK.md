@@ -144,3 +144,70 @@ name. The contract must stay as strict: only `aitrader.broker.webull` may import
 
 After the merge-ready push, the operator runs `uv run aitrader sandbox check` once on the Mac and
 sends the designer the report. Its findings go into document 14 in a later commit.
+
+## Review round 1 (designer, 2026-10-24) — answers to BLOCKED B1 and B2
+
+Codex was right to stop on both points. These rules replace the matching parts of A and C.
+
+### B1. Sandbox host (replaces the "Endpoints" bullet in A)
+
+SDK 3.0.4 defines only production hosts for `jp`. The test hosts are taken from Webull's
+developer page "SDKs, environments and test accounts"
+(https://developer.webull.co.jp/apis/docs/sdk, read by the designer on 2026-10-24):
+
+| Service | Test (UAT) host | Production host (never used) |
+|---|---|---|
+| Trading API | `jp-openapi-alb.uat.webullbroker.com` | `api.webull.co.jp` |
+| Trading events (gRPC) | `jp-openapi-events.uat.webullbroker.com` | `events-api.webull.co.jp` |
+| Market data streaming (MQTT) | `data-api.uat.webullbroker.com` | `data-api.webull.co.jp` |
+
+- The allow-list in code is exactly one host: `jp-openapi-alb.uat.webullbroker.com` (trading API).
+  The events and MQTT hosts are out of scope (SB-4, SB-5) and are **not** in the allow-list.
+- Default for `webull_sandbox.endpoint` is that host. The value must be a bare host name: no
+  scheme, port, path, user info or trailing dot. Compare after lower-casing; anything else,
+  including every host in the SDK's `endpoints.json`, is refused with a clear error before any SDK
+  client is built.
+- Point the SDK at the host with its own endpoint override (the page shows
+  `ApiClient(app_key, app_secret, "jp")` followed by `add_endpoint("jp", <host>)`; use the real
+  names you find in the installed SDK). After building the client and before the first request,
+  read back the host the SDK will use for the trading API and refuse to continue unless it equals
+  the allowed host. A test proves that a client whose resolved host is a production host is
+  refused, and that no transport call is made.
+- Do not try other hosts as a fallback (no `…pre…` guess, U5). If the allowed host does not
+  answer, the sandbox check records the failure under SB-6 and the allow-list is changed only by a
+  later PR.
+
+### B2. Order checks in `aitrader sandbox check` (replaces the SB-2 subset bullet in C)
+
+Fractional limits must be marketable (document 14 §3, U7), and the sandbox has no reliable quotes
+(SB-5 is unknown), so the check never sends an order that is meant to fill. Each order check
+records an `outcome` and a `result`:
+
+1. **Whole-share resting limit:** preview, then place a `LIMIT` buy of 1 share of SPY at
+   `webull_sandbox.far_limit_price` (default USD 1.00, a `Decimal` in configuration). Then:
+   - accepted → status by `client_order_id` → cancel → status shows cancelled:
+     `outcome = accepted_cancelled`, `result = pass`;
+   - rejected at preview or place → record the code and message:
+     `outcome = rejected`, `result = finding` (not a failure; it tells us the sandbox price rules);
+   - filled or partly filled → `outcome = filled`, `result = finding`, and cancel any rest.
+2. **Fractional non-marketable limit (expected reject):** place a `LIMIT` buy of `0.01000` SPY at
+   the same far price.
+   - rejected → record the code: `outcome = rejected_as_expected`, `result = pass`;
+   - accepted → cancel it at once, then confirm by status:
+     `outcome = accepted_unexpectedly`, `result = finding`.
+3. **Fractional below USD 1 (expected reject):** unchanged from C: record the reject code;
+   rejected → `pass`, accepted → cancel at once and record `finding`.
+
+- `result = fail` is used only for transport or auth errors, an order that cannot be found by its
+  `client_order_id`, or a cancel that cannot be confirmed. The command exits 1 if any check has
+  `result = fail`, else 0 (exit 2 without the variables, as in C).
+- No `MARKET` order and no marketable fractional order is sent by this command.
+- SB-3 (duplicate `client_order_id`) reuses the ID of check 1 when it was accepted; if check 1 was
+  rejected, SB-3 is recorded as `outcome = skipped`, `result = finding`.
+
+### Other notes
+
+- The uv warning about `build_system.requires = ["uv-build>=0.11.0,<0.12"]` versus uv 0.12.1 is
+  not part of this task; leave `[build-system]` unchanged. It is tracked in `docs/status.md`.
+- Acceptance criteria 1–8 still apply. Add to AC 2: the resolved-host read-back test from B1.
+  Add to AC 5: fake-transport tests for every `outcome` listed in B2 and the exit codes 0 / 1 / 2.

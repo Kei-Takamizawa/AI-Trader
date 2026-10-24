@@ -138,7 +138,7 @@ In the sandbox (public test accounts, no owner account needed):
 | SB-3 | Duplicate `client_order_id` behaviour (expected: rejected) and lookup of an order after a simulated timeout. |
 | SB-4 | gRPC events: delivery of `FILLED`, `FINAL_FILLED`, `PLACE_FAILED`, `CANCEL_SUCCESS`; `Ping` interval; behaviour on disconnect. |
 | SB-5 | Whether the sandbox returns market data and simulated fills, and how realistic they are. |
-| SB-6 | Which UAT host names are current. |
+| SB-6 | Which UAT host names are current. The developer page "SDKs, environments and test accounts" (read 2026-10-24) lists trading API `jp-openapi-alb.uat.webullbroker.com`, events `jp-openapi-events.uat.webullbroker.com`, MQTT `data-api.uat.webullbroker.com`; SDK 3.0.4 itself defines only production hosts for `jp`, so the adapter sets the test host with the SDK's endpoint override (TASK-008). |
 
 With Webull support or the owner's account (Phase 6, after approval to open the account):
 
