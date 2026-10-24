@@ -219,6 +219,7 @@ equity, returns, drawdown, positions, pending intents and the SPY buy-and-hold c
 Returns and drawdown are fractions (0.01 means 1%). The fixed JPY rate is a reporting assumption.
 A short JSON and Markdown report for each new session appears under `data/paper/reports/daily/`;
 existing reports are never rewritten. Fills are modelled, not actual broker executions.
+Missing daily report files are recreated from verified replay on the next run.
 
 Exit codes: 0 success (also no new sessions), 2 configuration, 4 data error, 5 usage or a held
 lock, 6 replay/book mismatch. **On exit 6, stop and report the status and affected session to

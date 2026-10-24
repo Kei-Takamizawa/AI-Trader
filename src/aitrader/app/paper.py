@@ -230,10 +230,11 @@ def run_paper(
                     )
                 added = len(new)
                 previous = paper.initial_capital_usd
-                new_dates = {s.session for s in new}
                 for snapshot in result.sessions:
-                    if snapshot.session in new_dates:
+                    try:
                         write_daily(state_dir, snapshot, previous)
+                    except OSError as exc:
+                        raise DataError(f"daily report {snapshot.session}: {exc}") from exc
                     previous = snapshot.equity_usd
                 recorded_last = max(last, date.fromisoformat(latest)) if latest else last
                 benchmark = buy_and_hold(
