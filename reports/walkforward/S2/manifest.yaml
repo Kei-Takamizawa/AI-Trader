@@ -1,0 +1,40 @@
+ai_replay_store_hash: null
+config_hash: f51c887ce9d534ffc3c501485841c4dfe803dd19cbee086a3f7f990b0b49162f
+corporate_actions:
+  distribution: 830
+  split: 2
+  unexplained: 11
+  unexplained_minor: 11
+cost_profile: webull_jp
+data_end: '2026-10-16'
+data_snapshot_hash: f9469b49a589c5e134a36607ef86283d6427812395545287c15589d2ba3a5815
+git_commit: 7892751c473cbbc44d6e05415885581e618d6788
+grid:
+- params:
+    atr_period: '20'
+    atr_stop_multiple: '2.5'
+    exit_sma_period: '5'
+    max_hold_sessions: '5'
+    rsi_entry_below: '10'
+    rsi_period: '2'
+    symbols: ('SPY', 'QQQ', 'IWM')
+    target_weight: '0.25'
+    trend_period: '200'
+  params_hash: 7e40bf78b9b8748ac675d7b7b1136cb20acbcd18024fe18bbcc2f4ccabedc1ff
+holdout_months: 24
+holdout_start: '2024-10-17'
+holdout_used: false
+period:
+  end: '2024-07-02'
+  holdout_used: false
+  start: '2017-01-03'
+random_seed: 0
+signal_data_snapshot_hash: 8985aaec0706f25895d74f1ff4a829dccb976e65d97cf601a2c4da1dda5a5c52
+strategy:
+  id: S2
+  params_hash: 7e40bf78b9b8748ac675d7b7b1136cb20acbcd18024fe18bbcc2f4ccabedc1ff
+  version: 1.0.0
+test_months: 6
+train_months: 36
+variants_tried: 1
+variants_tried_so_far: 1
