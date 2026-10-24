@@ -91,6 +91,16 @@ class DataSourceSettings(BaseModel):
     provider: Literal["none", "csv", "alpaca"] = "none"
 
 
+class WebullSandboxSettings(BaseModel):
+    """Non-secret settings for the operator-only sandbox check."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    endpoint: str = "jp-openapi-alb.uat.webullbroker.com"
+    account_tax_type: str = "SPECIFIC"
+    far_limit_price: PositiveDecimal = Decimal("1.00")
+
+
 class Secrets(BaseSettings):
     """Secrets come only from ``AITRADER_*`` environment variables, never from files.
 
@@ -112,6 +122,7 @@ class Settings(BaseModel):
     broker_environment: BrokerEnvironment
     risk: RiskLimits = RiskLimits()
     data: DataSourceSettings = DataSourceSettings()
+    webull_sandbox: WebullSandboxSettings = WebullSandboxSettings()
     backtest: BacktestSettings | None = None
     paper: PaperSettings | None = None
     secrets: Secrets = Field(default_factory=Secrets, exclude=True, repr=False)

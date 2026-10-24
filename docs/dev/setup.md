@@ -107,3 +107,60 @@ parameter grid, data snapshots, corporate-action counts and hold-out boundary.
 Both `backtest` and `walkforward` accept `--git-commit <commit>` to record an explicit commit.
 Otherwise they look up HEAD using Git on PATH. If that lookup fails, `backtest` records
 `unknown`; `walkforward` exits with code 4 and asks for `--git-commit`.
+
+## Webull sandbox
+
+The official `webull-openapi-python-sdk==3.0.4` is installed by the operator. Tests use
+handwritten responses from `docs/reference/webull-trading-api-v3.md` and never call Webull.
+Only `aitrader.broker.webull` imports the SDK; PAPER continues to use SimBroker and LIVE stays
+disabled.
+
+The operator sets `WEBULL_SANDBOX_APP_KEY`, `WEBULL_SANDBOX_APP_SECRET` and
+`WEBULL_SANDBOX_ACCOUNT_ID` in their environment using the public shared test account details
+from Webull's developer documentation. Do not paste the values into files, commands saved in
+shell history, logs, reports or issue descriptions. Missing variables cause exit code 2.
+
+Run this command **only as the operator**, on the Mac:
+
+```bash
+uv run aitrader sandbox check
+```
+
+It checks account membership, balance availability, positions and SPY instrument flags, then
+previews and places a whole-share SPY limit buy at USD 1.00, queries it by its own client order
+ID and cancels it. It also probes two expected fractional rejections, the duplicate ID and an
+unknown ID. Only this run's `aitsb-` order IDs are used. The sandbox is shared, so rejection and
+unexpected acceptance are recorded as findings. No market or deliberately marketable fractional
+order is sent. Transport/authentication errors, missing own orders and unconfirmed cancellations
+cause exit code 1; otherwise the command exits 0. A timeout is never resubmitted automatically.
+
+Optional non-secret settings belong under `webull_sandbox` in `config/base.yaml`:
+
+```yaml
+webull_sandbox:
+  endpoint: jp-openapi-alb.uat.webullbroker.com
+  account_tax_type: SPECIFIC
+  far_limit_price: 1.00
+```
+
+The endpoint is a bare hostname, case-insensitive. Only that trading UAT host is allowed;
+production, events and market data hosts, URLs, paths and ports are refused. The adapter checks
+SDK endpoint resolution before sending, disables SDK retries and SDK logging, and uses a
+private temporary token directory outside the repository. It does not initialize 2FA or use the
+SDK's default `conf/` directory; the temporary directory is cleaned up when the command exits.
+The SDK's own initializer checks token configuration and creates or loads a sandbox token before
+trading calls. Non-NORMAL tokens are checked for at most about 10 seconds, at 5-second intervals;
+no human verification flow is started. Initialization failure or authentication failure during
+SB-1 stops the check: all remaining checks are recorded as `skipped_auth` and exit code is 1.
+
+The command writes `reports/sandbox/<UTC date>.json` (another run on the same date replaces it).
+Use `--out-dir` to choose another report directory and `--config-dir` for another base.yaml.
+The report contains the SDK version, allowed host, per-check outcome and pass/fail/finding,
+per-call HTTP status, error code and latency in milliseconds, documented field presence flags,
+observed order statuses, and balance presence only. It contains no keys, tokens, account numbers,
+raw balances, provider messages or response bodies. The `token` check includes only whether token
+checking is enabled (null means unknown), token status, whether expiry was present, HTTP status,
+SDK error code and latency; neither token content nor expiry value is recorded. Send this report
+to the designer; offline tests establish request construction and mapping, while only this operator
+run establishes actual
+sandbox behaviour. SB-4 event streaming and SB-5 market data/fill realism remain out of scope.

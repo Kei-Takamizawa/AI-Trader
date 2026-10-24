@@ -1,64 +1,126 @@
-# LAST_REPORT — TASK-011
+# LAST_REPORT — TASK-008, review round 7
 
 Status: DONE
 
 ## Summary
-Implemented explicit UTC bounds for historical daily bars and CLI validation that the requested end session closed at least 16 minutes before the injected CLI clock. Both backtest commands now share PATH-based Git lookup, with an explicit commit taking priority and command-specific failure handling. Fixed the SQLite connection leak when database initialization rejects a newer schema, and made storage resource warnings fail tests. Updated developer setup instructions.
+Implemented F3 and F4 on the existing round-6 sandbox adapter. FAILED orders with executed
+quantity now map to CANCELLED, preserving FAILED and any error code in BrokerOrder.reject_code;
+zero-fill failures remain REJECTED. All five limited query operations now pace inside call()
+before acquiring their window, and wait_seconds discards expired calls before calculating a delay.
+Regression tests use fake transports, injected waits and simulated clocks, including the real
+OrderManager and Ledger.
 
-Execution: operator Mac, repository-local terminal; branch `claude/project-thread-whk5dv`, starting HEAD `e26edc6f5b423ae58a450cddd51aa28071e515f4`. The initial working tree was clean. `.ai/CURRENT_TASK.md` already contained the complete TASK-011 instructions and was preserved unchanged.
+Task / execution: TASK-008, review round 7; owner Mac (Darwin), Python 3.14.7.
+Branch: `claude/project-thread-whk5dv`; starting and final HEAD:
+`34c958e9a337926d1773ca9489c0cb761e78e411`.
+The worktree was clean at start. AGENTS.md, CLAUDE.md, CURRENT_TASK (all rounds), project status,
+design index, the response reference and relevant existing code/tests were read. CURRENT_TASK
+already contains the full instructions and was preserved. No next cycle was started.
 
 ## Files changed
 - `.ai/LAST_REPORT.md`
-- `docs/dev/setup.md`
-- `src/aitrader/cli/main.py`
-- `src/aitrader/data/alpaca.py`
-- `src/aitrader/data/ingest.py`
-- `src/aitrader/storage/database.py`
-- `tests/integration/test_commit_lookup.py` (added)
-- `tests/unit/data/test_alpaca.py`
-- `tests/unit/data/test_ingest.py`
-- `tests/unit/storage/test_storage.py`
+- `src/aitrader/broker/webull/broker.py`
+- `src/aitrader/broker/webull/parsing.py`
+- `tests/integration/test_webull_fills.py`
+- `tests/unit/broker/test_webull.py`
 
 ## Commands run
-All uv commands used `UV_OFFLINE=1 UV_CACHE_DIR=.uv-cache`; no dependencies were added or downloaded.
+All uv commands used `UV_OFFLINE=true UV_NO_SYNC=true UV_CACHE_DIR=.cache/uv` to prevent
+synchronization/downloads and keep the cache inside the repository. No dependency was installed.
 
-- Initial `git status --short`, `git branch --show-current`, `git rev-parse HEAD`: PASS; clean worktree and branch/HEAD recorded above. Final `git diff --check`: PASS.
-- Baseline `uv run pytest --cov=aitrader`: PASS, 1006 passed in 18.51s; all modules 100%, with one SQLite ResourceWarning.
-- Baseline `uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir .task-011-baseline --start 2023-01-03 --end 2024-12-31`: PASS; captured before implementation.
-- `uv run ruff format`: PASS, three test files formatted; final run unchanged.
 - `uv run ruff check`: PASS, all checks passed.
-- `uv run ruff format --check`: PASS, 144 files already formatted.
-- `uv run mypy`: PASS, no issues in 143 source files.
-- `uv run lint-imports`: PASS, 9 contracts kept, 0 broken.
-- `uv run pytest --cov=aitrader`: PASS, 1033 passed in 27.43s, no warnings. All reported modules retain 100% statement and branch coverage (4096 statements, 994 branches).
-- `uv run coverage report --include='src/aitrader/*' --fail-under=90`: PASS, 100% total and every reported module 100%.
-- `uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir bt-a --start 2023-01-03 --end 2024-12-31`: PASS, run ID `bt-42e8b77cb9e17640`.
-- `uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir bt-b --start 2023-01-03 --end 2024-12-31`: PASS, same run ID.
-- `diff -r bt-a bt-b`: PASS, all output files byte-identical. Generated comparison directories removed after verification.
-- `cmp .task-011-baseline/equity.csv bt-a/equity.csv` and `cmp .task-011-baseline/metrics.json bt-a/metrics.json`: PASS, both unchanged from baseline.
-- SHA-256 of equity, before and after: `1ce0a8f6a09cafd3c2e0dcf3be8e1e2919d304af941b8e4eee3bae2cbef39363`.
-- SHA-256 of metrics, before and after: `d4592f8d1aac44388280c685bd1470b9245372f2dda3d95c05658019a83d09ca`.
-
-Intermediate results: the first focused run had 78 passed and one failed because updating the new required timestamp argument accidentally added a timestamp to an expected session-date list; the expectation was corrected to the original two dates. Initial lint found the dynamic subprocess executable and an intentionally naive datetime in an error test; the latter now derives from a UTC datetime. The subprocess call has a narrowly documented S603 annotation: the task explicitly requires a PATH-resolved executable, arguments are fixed and no shell is used. No global lint configuration was changed. A coverage report attempted before the concurrent full test process finished returned “No data to report”; the final report above was rerun after successful completion.
+- `uv run ruff format --check`: PASS, 159 files already formatted.
+- `uv run mypy`: PASS, no issues found in 158 source files.
+- `uv run lint-imports`: PASS, 9 contracts kept, 0 broken; 124 files, 502 dependencies.
+- `uv run pytest --cov=aitrader`: PASS, **1308 passed in 30.74s**.
+- `uv run coverage report --include='src/aitrader/*' --fail-under=90`: PASS, **100%** in every
+  reported module; 4823 statements and 1200 branches, none missed or partially covered.
+- `uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir bt-a --start 2023-01-03 --end 2024-12-31`:
+  PASS, run ID `bt-628ad003492c7cea`.
+- `uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir bt-b --start 2023-01-03 --end 2024-12-31`:
+  PASS, same run ID.
+- `diff -r bt-a bt-b && rm -rf bt-a bt-b`: PASS, exit 0, byte-identical. Both paths were
+  confirmed absent before running; only the newly generated directories were removed.
+- `uv run ruff format src/aitrader/broker/webull/broker.py src/aitrader/broker/webull/parsing.py tests/unit/broker/test_webull.py tests/integration/test_webull_fills.py`:
+  PASS, 4 files unchanged.
+- `uv run pytest tests/unit/broker/test_webull.py tests/integration/test_webull_fills.py tests/contract --no-cov`:
+  initial run FAIL, 4 failed / 236 passed. The new pacing test incorrectly passed client_order_id
+  to four SDK request types that do not accept it. Corrected the test to supply that parameter
+  only for detail; the subsequent full suite above passes all five parameter cases.
+- `git diff --check`: PASS.
 
 ## Acceptance criteria
-- [x] A.3 exact query timestamps and offline requests — `test_request_shape_and_headers`, `test_end_timestamp_caps` check explicit midnight start, end-of-day cap, now-minus-16-minutes cap, second precision and cap boundary. New client and CLI tests use FakeTransport, with no external HTTP request. The existing transport test uses only a local loopback server.
-- [x] A.2 refusal and exit code 2 with last closed session — `test_cli_end_requires_a_closed_session` covers one microsecond below, exactly at and one microsecond above 16 minutes for regular and early closes, a holiday, weekend, future session, malformed date and out-of-calendar end. Accepted requests propagate the same CLI timestamp to both raw and adjusted fetches; refused requests produce no downloads or output directory.
-- [x] B commit lookup for both commands — `test_commit_lookup` covers explicit override, successful PATH lookup, missing Git, subprocess failure and OS error (10 command cases). Both `shutil.which` and subprocess output are patched; explicit overrides call neither. Backtest records `unknown` on failures; walkforward exits 4 and names `--git-commit`.
-- [x] C no ResourceWarning; storage warnings become errors — full suite has no warnings. `test_a_newer_schema_is_refused` verifies the rejected initialization closes the actual SQLite connection. Storage-only module markers promote ResourceWarning and PytestUnraisableExceptionWarning to errors, including leaks detected during destruction.
-- [x] Fixture double run byte-identical; existing equity and metrics unchanged — recursive diff, binary comparisons and hashes above.
-- [x] All mandatory checks green; coverage retained — final full suite and coverage gate above, every reported module 100%.
-- [x] `fetch_report.json` format unchanged — existing `test_fetch_universe_writes_both_series_and_a_report` remains passing; report serialization was not modified.
-- [x] Developer setup documents the last closed session, 16-minute rule and walkforward explicit commit option.
+- [x] AC 1, broker contracts — full suite passes for SimBroker and fake-backed WebullBroker,
+  including submit/status/idempotency/cancel, lifetime fill-ID union, known/unknown rejection,
+  submit ambiguity/lookup, auth/rate errors, step/ID validation, mappings and host rejection.
+- [x] AC 2, sandbox isolation — existing host/environment, resolved-host read-back and
+  initializer-not-called-on-wrong-host tests pass. Routing and SDK initialization are unchanged.
+- [x] AC 3, secret safety — existing captured DEBUG logging, exception, repr and report tests,
+  including invented token redaction, pass. Parsing still receives redacted order snapshots.
+- [x] AC 4, no submit retries — existing timeout tests pass, including one transport attempt
+  and lookup of the unknown submit outcome. Submit code is unchanged.
+- [x] AC 5, sandbox CLI — existing fake-transport outcome, token-fact, auth-stop, report and
+  missing-variable tests pass. Round 6's SPY flag check remains fail/unavailable until the
+  instrument shape is mapped in a later task; an otherwise successful full probe exits 1.
+- [x] AC 6, SDK isolation — all 9 import contracts pass without changes.
+- [x] AC 7, required checks and coverage — all pass; every module remains at 100% statement
+  and branch coverage.
+- [x] AC 8, fixture reproducibility — both run IDs match and recursive diff exits 0.
+- [x] F3, FAILED after a partial fill —
+  `test_failed_after_partial_fill_is_booked_once_and_cancelled` uses the real manager and ledger:
+  working partial snapshot books nothing; FAILED books exactly 0.1 once, ends CANCELLED, and
+  three repeated syncs return no events or MISMATCH. Existing terminal-snapshot tests cover
+  history, detail and open-order parsing for zero, partial and full quantities.
+- [x] F3, preserved failure reason —
+  `test_failed_status_preserves_reason_and_maps_executed_quantity` covers zero, smallest supported
+  positive step, partial and full quantity, with absent/empty/present codes. reject_code is
+  `FAILED` or `FAILED:<error_code>`; status mapping keeps the real filled quantity.
+- [x] F4, every limited query is paced — `test_limited_calls_wait_before_transport` covers
+  balance, positions, detail, open and history. Three calls make exactly three transport calls,
+  waiting 2 seconds before the third. The separate pagination wait was removed; the existing
+  four-page pacing regression still passes with exactly one 2-second wait.
+- [x] F4, expired calls — `test_wait_seconds_ignores_expired_calls_in_staggered_window` checks
+  staggered timestamps: expired calls do not consume slots or hide the delay of the next active
+  window. Existing threshold tests cover just below, at and just above 2 seconds.
+- [x] F4, manager integration — `test_sync_paces_detail_queries_for_three_active_orders`
+  successfully queries all three IDs with no events or RateLimitedError, keeps all three active,
+  and records exactly one 2-second injected wait. No real sleep is used in these new tests.
+
+## Expected / Actual and reproduction
+Expected: a partially executed FAILED order closes through a legal state transition, with no
+lost or duplicate execution; consecutive limited queries wait rather than exposing a local
+rate-limit error to OrderManager.sync(). Actual: both integration regressions pass, all five
+limited operations wait before sending, and remote HTTP/SDK rate-limit error tests still pass.
+
+Reproduce with the offline environment settings above:
+`uv run pytest tests/unit/broker/test_webull.py tests/integration/test_webull_fills.py tests/contract --no-cov`.
+
+GUI verification: NOT_RUN; no GUI behavior is involved.
+Errors/warnings: the initial test-construction error is documented above and fixed. No warnings
+or errors were reported by the final required checks.
 
 ## Deviations from the task or the design
-None. The default backtest manifest now resolves HEAD as required, so its manifest/run ID changes from the old default `unknown`; equity and metrics remain identical.
+None. The old test expecting a local query refusal was replaced by the required pacing test;
+remote refusal and direct limiter threshold guards remain tested. No checks were weakened.
+
+The round-5 accounting assumption remains unchanged: fill/cost timestamps use the start-of-poll
+observation time, while settlement derives from the execution/placement time in America/New_York.
+Working partial quantities remain hidden until terminal; stable :final IDs prevent rebooking.
+This is offline behavior evidence, not a measured real-world polling-delay guarantee.
+
+SDK logging suppression is unchanged. SDK_LOGGERS still covers webull, webull.core, webull.data,
+webull.core.client, webull.core.http.response, webull.core.retry.retry_condition,
+webull.core.auth.signers.app_key_signer, webull.core.auth.composer.default_signature_composer,
+webull.core.http.initializer.client_initializer, webull.core.http.initializer.token.token_storage,
+webull.core.http.initializer.token.token_manager, webull.data.internal.quotes_client,
+webull.trade.events.signature_composer and webull.trade.trade_events_client.
 
 ## Open issues and questions
-None requiring a designer decision.
+No new implementation blocker or design decision. Instrument mapping and the existing cash,
+position and observation-time assumptions remain deferred as specified. Owner approval of the
+protected Webull path remains required before merge.
 
-GUI verification: NOT_RUN; this task changes CLI and storage behavior only. CLI behavior was verified through CliRunner and the fixture command runs above.
-
-Operator verification: NOT_RUN as explicitly excluded by the task. The operator still needs to run `uv run aitrader data fetch --end <last closed session>` with their existing credentials to verify actual free-plan service behavior. Offline tests prove request construction and validation, not provider acceptance.
-
-Intentionally not performed: external service requests, credential inspection, dependency installation, design/protected-path changes, live behavior, Git staging, commits, pushes, branch changes or merges. Temporary baseline outputs and test logs were removed after their results were recorded here.
+Intentionally NOT_RUN: real sandbox/API calls (operator only), GUI checks, network access,
+credential/token-file inspection, dependency installation, production/LIVE/PAPER routing changes,
+ledger/manager/BrokerPort changes, design-document edits, Git staging/commit/push/branch changes,
+and another cycle. Git work remains the operator's responsibility under AGENTS.md.

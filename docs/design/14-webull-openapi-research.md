@@ -115,6 +115,8 @@ Worked example for a ¥50,000 account (USD/JPY 155 [A]):
 | U13 | **Agentic tools** (MCP, CLI, Skills) can place orders when connected with trading permission. | [V] | Never connected to Claude, Codex or Muse with a production account (section 7). |
 | U14 | **Disclaimer:** Webull disclaims responsibility for losses from automated or AI-driven decisions. | [V] | Owner accepts this in the LIVE approval record. |
 | U15 | **Documentation errors** exist (registration number, inconsistent host names, an example labelled HMAC-SHA1 vs HMAC-SHA256). | [V] | Every behaviour we depend on is verified in the sandbox (section 8) and, where needed, with Webull support. |
+| U16 | **Balance and position semantics:** the balance gives per-currency `cash_balance` and `buying_power` but no settled/unsettled split; position `cost_price` is not stated as per share or total (reference: `docs/reference/webull-trading-api-v3.md`). | [U] | Sandbox adapter assumes settled USD = min(cash, buying power) and per-share `cost_price` (TASK-008); verify with the owner's account before LIVE (WB-9). |
+| U17 | **Order-level fills only:** the API reports cumulative `filled_quantity` and an average `filled_price` per order, not individual executions. | [V] | The adapter reports one fill per order only when the order is terminal, booked at the time it is observed (trade date from `filled_time_at` for settlement); working orders show no fills (TASK-008 round 5). Partial exposure of a working order is invisible until it ends; acceptable for marketable DAY orders, to be reviewed before LIVE together with SB-4 trade events. |
 
 ## 7. How this maps to the three environments
 
@@ -129,6 +131,8 @@ Note on PAPER market data: using Webull's own market data in PAPER would require
 
 ## 8. Items to verify after design approval
 
+SB-1, SB-2 (subset), SB-3 and SB-6 are automated by `aitrader sandbox check` (TASK-008); results are recorded in `reports/sandbox/`.
+
 In the sandbox (public test accounts, no owner account needed):
 
 | ID | Check |
@@ -138,7 +142,7 @@ In the sandbox (public test accounts, no owner account needed):
 | SB-3 | Duplicate `client_order_id` behaviour (expected: rejected) and lookup of an order after a simulated timeout. |
 | SB-4 | gRPC events: delivery of `FILLED`, `FINAL_FILLED`, `PLACE_FAILED`, `CANCEL_SUCCESS`; `Ping` interval; behaviour on disconnect. |
 | SB-5 | Whether the sandbox returns market data and simulated fills, and how realistic they are. |
-| SB-6 | Which UAT host names are current. |
+| SB-6 | Which UAT host names are current. The developer page "SDKs, environments and test accounts" (read 2026-10-24) lists trading API `jp-openapi-alb.uat.webullbroker.com`, events `jp-openapi-events.uat.webullbroker.com`, MQTT `data-api.uat.webullbroker.com`; SDK 3.0.4 itself defines only production hosts for `jp`, so the adapter sets the test host with the SDK's endpoint override (TASK-008). |
 
 With Webull support or the owner's account (Phase 6, after approval to open the account):
 
@@ -152,6 +156,25 @@ With Webull support or the owner's account (Phase 6, after approval to open the 
 | WB-6 | Market data terms for personal automated use; price of advanced subscriptions. |
 | WB-7 | Behaviour of protective orders during API or system outages; phone/app cancellation procedure; support hours in JST. |
 | WB-8 | Tokutei account with or without withholding — what the API needs (`account_tax_type`). |
+| WB-9 | Meaning of `cash_balance` and `buying_power` for unsettled sale proceeds in a cash account, and whether position `cost_price` is per share (U16). |
+
+### 8.1 First sandbox results (2026-10-24, SDK 3.0.4, adapter at d6dcf34)
+
+One run of `aitrader sandbox check` against `jp-openapi-alb.uat.webullbroker.com` with one of the public test accounts. One whole-share LIMIT buy far below the market was placed and cancelled; nothing was filled.
+
+| Item | Result |
+|---|---|
+| SB-6 host | The documented UAT trading host answers (DNS, TLS, HTTP). |
+| Token | Token config returns `token_check_enabled: false`; requests without 2FA succeed. An earlier run with wrong credential values returned 401 `UNAUTHORIZED` on every call. |
+| SB-1 accounts, balance | Shapes match `docs/reference/webull-trading-api-v3.md`. |
+| SB-1 positions | `available_quantity` and `instrument_id` are **absent**, although the reference marks them required. |
+| SB-1 instruments | HTTP 200, but none of the documented fields were found: the response shape differs from the reference (to be captured). |
+| SB-2 whole-share LIMIT | preview → place → status `SUBMITTED` → cancel → status **`CANCELED`** (one L; the reference says `CANCELLED`). A second cancel of a cancelled order returns 417 `OPENAPI_ORDER_CANNOT_OPERATE`. |
+| SB-2 fractional | 0.01 share at USD 1.00 and the below-USD-1 order are both rejected with 417 `OPENAPI_FRACTION_V2_BUY_AMOUNT_TOO_SMALL` (the amount rule, not the marketable-limit rule). |
+| SB-3 | A duplicate `client_order_id` is rejected with 417 `OPENAPI_REPEAT_REQUEST`; an unknown `client_order_id` returns 200 with no order. |
+| Latency | 250–630 ms per call; cancel 1.6 s; first call including token set-up about 1.9 s. |
+
+Third run (adapter at b21ae68, Saturday 2026-10-24): 10 of 11 checks pass. The whole-share LIMIT order is accepted on a non-trading day and cancelled (status `CANCELED`, no second cancel). The fractional 1.5-share LIMIT at USD 1.00 is rejected with 417 `OPENAPI_NO_TRADING_DAY`, so the marketable-limit rule for fractional orders is **still unverified** (re-run on a trading day). The instruments call returns an object whose only key is `data`, with no item objects, for `symbols=SPY`; the request parameters or the shape need a follow-up.
 
 ## 9. Sources (accessed 2026-10-23)
 

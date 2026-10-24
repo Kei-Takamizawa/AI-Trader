@@ -19,7 +19,7 @@ from pydantic import ValidationError
 
 from aitrader.config.errors import ConfigError, LiveDisabledError
 from aitrader.config.hard_caps import HARD_CAPS
-from aitrader.config.settings import RiskLimits, Secrets, Settings
+from aitrader.config.settings import RiskLimits, Secrets, Settings, WebullSandboxSettings
 from aitrader.domain import Mode
 
 _CREDENTIAL_KEY_PARTS = ("webull", "app_key", "app_secret", "secret", "token", "password")
@@ -66,7 +66,7 @@ def _reject_credential_keys(data: Mapping[str, Any], path: str = "") -> None:
     for key, value in data.items():
         full = f"{path}.{key}" if path else str(key)
         lowered = str(key).lower()
-        if any(part in lowered for part in _CREDENTIAL_KEY_PARTS):
+        if lowered != "webull_sandbox" and any(part in lowered for part in _CREDENTIAL_KEY_PARTS):
             raise ConfigError(
                 f"credential-like key '{full}' is not allowed in configuration files; "
                 "secrets come only from AITRADER_* environment variables, and Webull "
@@ -168,3 +168,13 @@ def config_hash(settings: Settings) -> str:
         data, default=_canonical, sort_keys=True, separators=(",", ":"), ensure_ascii=False
     )
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def load_webull_sandbox_settings(config_dir: Path) -> WebullSandboxSettings:
+    """Read only non-secret sandbox configuration; no trading mode is selected."""
+    data = _read_yaml(config_dir / "base.yaml")
+    _reject_credential_keys(data)
+    try:
+        return WebullSandboxSettings.model_validate(data.get("webull_sandbox", {}))
+    except ValidationError:
+        raise ConfigError("invalid webull_sandbox configuration") from None

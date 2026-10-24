@@ -22,7 +22,8 @@ in this build.
 | TASK-007a | Point-in-time adjusted signals, raw fills, dividends as cash, exact split ratios | done (Codex cycle 1, PR #2) |
 | TASK-007b | Strategy S1, walk-forward runner, minor vendor adjustments | done (Codex cycle 2, PR #3) |
 | TASK-007c | Research report on real data | done: `docs/research/2026-10-24-p2-walkforward.md`; S1 and S2 no-go for LIVE |
-| TASK-008 | Webull adapter on the official SDK, contract tests, sandbox runs | later (phase P3b) |
+| TASK-011 | Free-plan daily data fetch, commit lookup, SQLite warning | done (Codex cycle 3, PR #5) |
+| TASK-008 | Webull adapter (sandbox only) on the official SDK, contract tests, sandbox check | done (Codex cycle 4, review rounds 1–7, PR #6; owner approved the protected path) |
 
 All of the above up to TASK-010 is on `main`: pull request
 [Kei-Takamizawa/AI-Trader#1](https://github.com/Kei-Takamizawa/AI-Trader/pull/1) was merged on
@@ -65,8 +66,9 @@ as the reference strategy, and research S1 1.1 in parallel.
 1. Done (TASK-011, PR #5): `data fetch` now gets the latest closed session on the free plan
    (verified 2026-10-24: `--end 2026-10-23`, 23 symbols, no missing sessions; raw
    `6f0b2780…cd8eac`, adjusted `965e8cfa…7a0682`).
-2. **TASK-008 (P3b):** Webull adapter on the pinned official SDK with broker contract tests;
-   sandbox runs SB-1 to SB-6 by the operator with the public shared test keys (document 14).
+2. Done (TASK-008, PR #6): sandbox-only Webull adapter on `webull-openapi-python-sdk==3.0.4`,
+   broker contract tests and `aitrader sandbox check`. On 2026-10-24, a real sandbox run passed 10 of 11 checks
+   (document 14 §8.1). The follow-ups are listed under open items.
 3. **S1 1.1 research plan:** changes declared before any run, each counted as a variant.
 4. **P3 PAPER:** scheduler, live data adapter, virtual portfolio, reconciliation, kill switch,
    heartbeat, notifications, daily report. Cloud deployment needs the owner's approval to create
@@ -74,8 +76,16 @@ as the reference strategy, and research S1 1.1 in parallel.
 
 ## Open items
 
+- **Webull sandbox follow-ups (TASK-008):** (1) instruments returns `{"data": ...}` with no items
+  for SPY, so map the real shape or fix the request; (2) re-run `aitrader sandbox check` on a US
+  trading day to verify the fractional marketable-limit rule (it was rejected with
+  `OPENAPI_NO_TRADING_DAY` on a Saturday); (3) U16 and U17 assumptions must be verified before LIVE.
+
 - `tests/unit/data/test_alpaca.py::test_urllib_transport_against_a_local_server` leaves an
   `HTTPError` unclosed (a `ResourceWarning` under `-W error`); harmless, fix with the next data task.
+- `pyproject.toml` pins `build_system.requires = ["uv-build>=0.11.0,<0.12"]`; uv 0.12.1 on the
+  operator Mac warns about it (seen in TASK-008). Raise the bound in a small later task after
+  checking the uv-build release notes.
 
 - **Secret scanning in CI** is required by document 06 §5 but not in place yet. The tool must be
   chosen (free options first; anything paid needs the owner's approval). Until then the reviewer
