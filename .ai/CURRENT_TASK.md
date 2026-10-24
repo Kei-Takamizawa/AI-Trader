@@ -230,3 +230,14 @@ Not required in this round (keep out of scope):
 Acceptance: all criteria of TASK-007a still hold. The new tests pass, and the property test passes
 with a temporary local run at `max_examples=3000` (report the command and result; do not commit
 that change). Update `.ai/LAST_REPORT.md` with a "Review round 1" section.
+
+### Review round 1, finding 2 (CI on `ec88c5a`) — also required
+
+CI fails on `ec88c5a` deterministically:
+`FileNotFoundError: [Errno 2] No such file or directory: '.pytest_cache/tmpvg2yk2ey'`.
+The cause is that `test_no_lookahead_across_vendor_download_dates` creates its files with
+`TemporaryDirectory(dir=".pytest_cache")`, and a fresh checkout has no `.pytest_cache` (CI does
+not use the pytest cache). Use a location that always exists. Either take `tmp_path_factory`
+(session-scoped, so Hypothesis allows it) and call `mktemp()` per example, or use
+`TemporaryDirectory()` with no `dir`. Do not depend on the current directory. Check this locally
+from a clean state: `rm -rf .pytest_cache && uv run pytest -p no:cacheprovider tests/unit/data`.
