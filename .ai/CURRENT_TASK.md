@@ -109,3 +109,32 @@ and hash stable.
    LAST_REPORT) and the run still completes.
 5. All checks in `AGENTS.md` green; coverage 100% where it is 100% today and never below 90%.
 6. No change to protected paths or configuration files (`git diff --stat` in LAST_REPORT).
+
+## Review round 1 (designer, 2026-10-24) — implementation 1a4c33e accepted; one fix
+
+The TASK-014 implementation (1a4c33e) meets the scope above. One finding from the Codex GitHub
+review of the merged TASK-013 (PR #9, `src/aitrader/app/paper.py`) must be fixed in this PR,
+before the first real PAPER run on 2026-10-26:
+
+**R1. Recover missing daily reports.** Today the daily reports are written only for sessions
+inserted in this run, after the database transaction commits. If the process stops or a report
+write fails after the commit, the recorded session never gets its report (or gets only one of the
+JSON/Markdown pair), because later runs no longer treat it as new.
+
+- After verification, for **every** recorded session up to `through` (the ones just inserted
+  and the ones recorded earlier), write each of `reports/daily/YYYY-MM-DD.json` and `.md` that
+  is missing. Never rewrite an existing report file. Build the report from the verified replay
+  snapshot (identical to the recorded one), with the same previous-equity rule as today.
+- A report write failure after the commit must not leave the book in a state that a later run
+  cannot repair: the run reports the error (exit 4, status `HALTED` with the reason), and the next
+  successful run writes the missing files.
+- Tests: (1) delete one session's `.md` and another's `.json` after a successful run; the next
+  run recreates exactly those files, leaves the others byte-identical, inserts nothing and exits
+  0; (2) simulate a failure while writing reports after the commit (for example a patched writer
+  that raises once); the run exits 4 with `HALTED`, and the next run writes the missing reports
+  and returns to `RUNNING`.
+- Update the `docs/dev/setup.md` PAPER section in one sentence: missing reports are recreated on
+  the next run.
+
+Acceptance: the criteria above still hold; all `AGENTS.md` checks green; coverage 100% for the
+touched modules.
