@@ -21,7 +21,7 @@ in this build.
 | TASK-010 | Reconciliation of the engine's books against the broker | done |
 | TASK-007a | Point-in-time adjusted signals, raw fills, dividends as cash, exact split ratios | done (Codex cycle 1, PR #2) |
 | TASK-007b | Strategy S1, walk-forward runner, minor vendor adjustments | done (Codex cycle 2, PR #3) |
-| TASK-007c | Research report on real data (operator runs it) | **next** |
+| TASK-007c | Research report on real data | done: `docs/research/2026-10-24-p2-walkforward.md`; S1 and S2 no-go for LIVE |
 | TASK-008 | Webull adapter on the official SDK, contract tests, sandbox runs | later (phase P3b) |
 
 All of the above up to TASK-010 is on `main`: pull request
@@ -59,12 +59,18 @@ tests. Claude implemented TASK-002 to TASK-006, TASK-009 and TASK-010 itself bef
 
 ## Next steps
 
-1. **TASK-007c:** the operator runs `aitrader walkforward` for S1 and S2 on the real data
-   (`data/bars`, end 2026-10-16) and sends the designer `walkforward.json` and `manifest.yaml`
-   (results may be committed under `reports/`); the designer writes the research report with
-   go/no-go per strategy. The hold-out stays locked until a strategy version is frozen.
-2. **Data fetch follow-up:** handle the free plan's limit on recent SIP data (for example an
-   explicit end timestamp or a later end date); the designer verifies Alpaca's documentation first.
+Owner decision 2026-10-24 (research report, section 7): build the paper-trading path with S1 1.0.0
+as the reference strategy, and research S1 1.1 in parallel.
+
+1. **Daily data for operation:** the free Alpaca plan refused recent SIP data (`--end 2026-10-23`).
+   The designer verifies Alpaca's documentation and specifies a fix (for example the IEX feed for
+   the latest sessions or an explicit end timestamp) before PAPER can run daily.
+2. **TASK-008 (P3b):** Webull adapter on the pinned official SDK with broker contract tests;
+   sandbox runs SB-1 to SB-6 by the operator with the public shared test keys (document 14).
+3. **S1 1.1 research plan:** changes declared before any run, each counted as a variant.
+4. **P3 PAPER:** scheduler, live data adapter, virtual portfolio, reconciliation, kill switch,
+   heartbeat, notifications, daily report. Cloud deployment needs the owner's approval to create
+   the Google Cloud project `aitrader-paper` (asked at that time).
 
 ## Open items
 

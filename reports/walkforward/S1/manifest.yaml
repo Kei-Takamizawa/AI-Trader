@@ -1,0 +1,81 @@
+ai_replay_store_hash: null
+config_hash: f51c887ce9d534ffc3c501485841c4dfe803dd19cbee086a3f7f990b0b49162f
+corporate_actions:
+  distribution: 830
+  split: 2
+  unexplained: 11
+  unexplained_minor: 11
+cost_profile: webull_jp
+data_end: '2026-10-16'
+data_snapshot_hash: f9469b49a589c5e134a36607ef86283d6427812395545287c15589d2ba3a5815
+git_commit: 7892751c473cbbc44d6e05415885581e618d6788
+grid:
+- params:
+    atr_period: '20'
+    atr_stop_multiple: '3'
+    equivalents: (('SPY', 'IVV', 'VOO'), ('GLD', 'IAU'))
+    lookback: '126'
+    skip: '0'
+    symbols: ('SPY', 'IVV', 'VOO', 'VTI', 'QQQ', 'IWM', 'XLB', 'XLC', 'XLE', 'XLF',
+      'XLI', 'XLK', 'XLP', 'XLRE', 'XLU', 'XLV', 'XLY', 'SHY', 'IEF', 'TLT', 'GLD',
+      'IAU')
+    target_weight: '0.25'
+    top_n: '3'
+    trend_period: '200'
+  params_hash: c41f5b33acaafade3766028f98323bf23c8fc491ca0f2ebe539c53778baf52fd
+- params:
+    atr_period: '20'
+    atr_stop_multiple: '3'
+    equivalents: (('SPY', 'IVV', 'VOO'), ('GLD', 'IAU'))
+    lookback: '126'
+    skip: '5'
+    symbols: ('SPY', 'IVV', 'VOO', 'VTI', 'QQQ', 'IWM', 'XLB', 'XLC', 'XLE', 'XLF',
+      'XLI', 'XLK', 'XLP', 'XLRE', 'XLU', 'XLV', 'XLY', 'SHY', 'IEF', 'TLT', 'GLD',
+      'IAU')
+    target_weight: '0.25'
+    top_n: '3'
+    trend_period: '200'
+  params_hash: 532ecdd91cc0ef44256f408a267ea691e30ff22f14197fbc9b8ba708d4566e6a
+- params:
+    atr_period: '20'
+    atr_stop_multiple: '3'
+    equivalents: (('SPY', 'IVV', 'VOO'), ('GLD', 'IAU'))
+    lookback: '126'
+    skip: '0'
+    symbols: ('SPY', 'IVV', 'VOO', 'VTI', 'QQQ', 'IWM', 'XLB', 'XLC', 'XLE', 'XLF',
+      'XLI', 'XLK', 'XLP', 'XLRE', 'XLU', 'XLV', 'XLY', 'SHY', 'IEF', 'TLT', 'GLD',
+      'IAU')
+    target_weight: '0.25'
+    top_n: '2'
+    trend_period: '200'
+  params_hash: 89ec5f11904c51b40e5c25f476450698cb38cc570e9afa87945d29806087cf25
+- params:
+    atr_period: '20'
+    atr_stop_multiple: '3'
+    equivalents: (('SPY', 'IVV', 'VOO'), ('GLD', 'IAU'))
+    lookback: '126'
+    skip: '5'
+    symbols: ('SPY', 'IVV', 'VOO', 'VTI', 'QQQ', 'IWM', 'XLB', 'XLC', 'XLE', 'XLF',
+      'XLI', 'XLK', 'XLP', 'XLRE', 'XLU', 'XLV', 'XLY', 'SHY', 'IEF', 'TLT', 'GLD',
+      'IAU')
+    target_weight: '0.25'
+    top_n: '2'
+    trend_period: '200'
+  params_hash: bfb75777647e42c6c42fcbd9d40ec048158e0b592469841a76adbe7816b8b15b
+holdout_months: 24
+holdout_start: '2024-10-17'
+holdout_used: false
+period:
+  end: '2024-07-02'
+  holdout_used: false
+  start: '2017-01-03'
+random_seed: 0
+signal_data_snapshot_hash: 8985aaec0706f25895d74f1ff4a829dccb976e65d97cf601a2c4da1dda5a5c52
+strategy:
+  id: S1
+  params_hash: c41f5b33acaafade3766028f98323bf23c8fc491ca0f2ebe539c53778baf52fd
+  version: 1.0.0
+test_months: 6
+train_months: 36
+variants_tried: 4
+variants_tried_so_far: 4
