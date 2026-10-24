@@ -22,7 +22,8 @@ in this build.
 | TASK-007a | Point-in-time adjusted signals, raw fills, dividends as cash, exact split ratios | done (Codex cycle 1, PR #2) |
 | TASK-007b | Strategy S1, walk-forward runner, minor vendor adjustments | done (Codex cycle 2, PR #3) |
 | TASK-007c | Research report on real data | done: `docs/research/2026-10-24-p2-walkforward.md`; S1 and S2 no-go for LIVE |
-| TASK-008 | Webull adapter on the official SDK, contract tests, sandbox runs | later (phase P3b) |
+| TASK-011 | Free-plan daily data fetch, commit lookup, SQLite warning | done (Codex cycle 3, PR #5) |
+| TASK-008 | Webull adapter (sandbox only) on the official SDK, contract tests, sandbox check | **in progress** (Codex cycle 4; protected path, owner approval needed in the PR) |
 
 All of the above up to TASK-010 is on `main`: pull request
 [Kei-Takamizawa/AI-Trader#1](https://github.com/Kei-Takamizawa/AI-Trader/pull/1) was merged on
@@ -65,8 +66,9 @@ as the reference strategy, and research S1 1.1 in parallel.
 1. Done (TASK-011, PR #5): `data fetch` now gets the latest closed session on the free plan
    (verified 2026-10-24: `--end 2026-10-23`, 23 symbols, no missing sessions; raw
    `6f0b2780…cd8eac`, adjusted `965e8cfa…7a0682`).
-2. **TASK-008 (P3b):** Webull adapter on the pinned official SDK with broker contract tests;
-   sandbox runs SB-1 to SB-6 by the operator with the public shared test keys (document 14).
+2. **Cycle 4 (TASK-008, P3b, in progress):** Webull adapter for the sandbox only, on
+   `webull-openapi-python-sdk==3.0.4`, broker contract tests, and `aitrader sandbox check`
+   (SB-1, SB-2 subset, SB-3, SB-6) run by the operator. Spec in `.ai/CURRENT_TASK.md`.
 3. **S1 1.1 research plan:** changes declared before any run, each counted as a variant.
 4. **P3 PAPER:** scheduler, live data adapter, virtual portfolio, reconciliation, kill switch,
    heartbeat, notifications, daily report. Cloud deployment needs the owner's approval to create
