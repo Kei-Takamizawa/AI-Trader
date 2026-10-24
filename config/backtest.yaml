@@ -6,6 +6,9 @@ backtest:
   start: 2016-01-04
   end: 2024-12-31
   initial_capital_usd: 323         # about JPY 50,000 at USD/JPY 155 (assumption)
+  fx_jpy_per_usd: 155              # fixed rate for JPY caps and reports (assumption)
+  half_spread_bps: 1               # liquid ETFs at the open (document 12 section 4)
+  max_participation_pct: 1         # of the bar's volume per order
 
 data:
   provider: csv

@@ -19,9 +19,7 @@ uv run ruff format --check         # formatting
 uv run mypy                        # strict type checks for src/ and tests/
 uv run lint-imports                # dependency rules (risk never imports AI, etc.)
 uv run pytest --cov=aitrader       # tests with coverage
-uv run coverage report \
-  --include='src/aitrader/domain/*,src/aitrader/config/*,src/aitrader/clock/*' \
-  --fail-under=90                  # coverage gate for the core packages
+uv run coverage report --include='src/aitrader/*' --fail-under=90   # coverage gate
 ```
 
 Fix formatting automatically with `uv run ruff format`.
@@ -33,7 +31,15 @@ uv run aitrader --version
 uv run aitrader config validate --mode backtest --config-dir config
 uv run aitrader config validate --mode paper --config-dir config
 uv run aitrader live               # always refuses: LIVE is disabled in this build (exit code 3)
+uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir results/s2 \
+  --start 2023-01-03 --end 2024-12-31   # backtest on the synthetic fixture bars
 ```
+
+`backtest` writes `manifest.yaml` (run ID, commit, config hash, strategy and parameter hash,
+data snapshot hash, period, cost profile), `metrics.json` and `equity.csv`. The same inputs give
+byte-identical files. The bars in `tests/fixtures/bars/` are **synthetic** (seeded random walk,
+`scripts/make_synthetic_bars.py`); they only exercise the code and say nothing about any
+strategy. Exit codes: 2 configuration error, 4 data error, 5 unknown strategy.
 
 `config validate` prints the mode, the broker environment and the configuration hash; an invalid
 configuration exits with code 2 and names the offending field.

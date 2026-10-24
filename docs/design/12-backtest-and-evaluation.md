@@ -7,6 +7,8 @@
 
 Daily cycle in the backtest mirrors production: end-of-day signal → next-session execution window → fills from the fill model → protective stops → end-of-day ledger and metrics.
 
+Implementation (TASK-005): the fill model is applied by building quotes from each day's bar (the open for the execution window; the open or the stop level for stops) and feeding them to the `SimBroker` through the same quote path PAPER uses, so both modes share one execution code path.
+
 ## 2. Preventing look-ahead and other biases
 
 | Bias | Control |

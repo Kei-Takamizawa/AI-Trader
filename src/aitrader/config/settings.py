@@ -7,6 +7,7 @@ from typing import Annotated, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from aitrader.config.errors import ConfigError
 from aitrader.domain import (
     BrokerEnvironment,
     EnvironmentNotAllowedError,
@@ -61,6 +62,12 @@ class BacktestSettings(BaseModel):
     start: date
     end: date
     initial_capital_usd: PositiveDecimal
+    fx_jpy_per_usd: PositiveDecimal = Decimal(155)
+    """Fixed rate for the JPY-denominated caps and reports (USD is held; no conversions)."""
+    half_spread_bps: PositiveDecimal = Decimal(1)
+    """Half the quoted spread assumed at the open (document 12 §4: 1-2 bp for liquid ETFs)."""
+    max_participation_pct: PositiveDecimal = Decimal(1)
+    """Largest share of a bar's volume one order may fill (document 12 §4)."""
 
     @model_validator(mode="after")
     def _check_period(self) -> Self:
@@ -117,3 +124,9 @@ class Settings(BaseModel):
         if self.mode is Mode.PAPER and self.paper is None:
             raise ValueError("paper mode needs a 'paper' section")
         return self
+
+    def require_backtest(self) -> BacktestSettings:
+        """The backtest section; a configuration error when there is none."""
+        if self.backtest is None:
+            raise ConfigError("these settings have no 'backtest' section")
+        return self.backtest

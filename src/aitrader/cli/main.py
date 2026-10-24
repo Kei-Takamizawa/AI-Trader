@@ -1,5 +1,6 @@
 """``aitrader`` command-line interface."""
 
+from datetime import date
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
 from pathlib import Path
@@ -7,11 +8,17 @@ from typing import Annotated
 
 import typer
 
+from aitrader.backtest import build_manifest, metrics_for, run_backtest, write_results
+from aitrader.clock import TradingCalendar
 from aitrader.config import ConfigError, LiveDisabledError, config_hash, load_settings
+from aitrader.data import DailyBarSource, DataError
 from aitrader.domain import Mode
+from aitrader.strategy import STRATEGIES
 
 EXIT_CONFIG_ERROR = 2
 EXIT_LIVE_DISABLED = 3
+EXIT_DATA_ERROR = 4
+EXIT_USAGE_ERROR = 5
 
 app = typer.Typer(
     name="aitrader",
@@ -67,6 +74,55 @@ def validate(
     typer.echo(f"mode: {settings.mode.value}")
     typer.echo(f"broker_environment: {settings.broker_environment.value}")
     typer.echo(f"config_hash: {config_hash(settings)}")
+
+
+@app.command()
+def backtest(
+    data_dir: Annotated[Path, typer.Option(help="Directory with <SYMBOL>.csv daily bars.")],
+    out_dir: Annotated[Path, typer.Option(help="Where to write manifest, metrics and equity.")],
+    strategy: Annotated[str, typer.Option(help="Strategy ID.")] = "S2",
+    config_dir: Annotated[Path, typer.Option(help="Configuration directory.")] = Path("config"),
+    start: Annotated[str | None, typer.Option(help="First session (YYYY-MM-DD).")] = None,
+    end: Annotated[str | None, typer.Option(help="Last session (YYYY-MM-DD).")] = None,
+    git_commit: Annotated[str, typer.Option(help="Commit recorded in the manifest.")] = "unknown",
+    variants_tried: Annotated[
+        int, typer.Option(help="Strategy variants tried so far (document 12 §2).")
+    ] = 1,
+) -> None:
+    """Run a backtest on CSV bars and write a reproducible run manifest and metrics."""
+    try:
+        settings = load_settings(Mode.BACKTEST, config_dir)
+        period = settings.require_backtest()
+    except ConfigError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(EXIT_CONFIG_ERROR) from exc
+    if strategy not in STRATEGIES:
+        typer.echo(
+            f"error: unknown strategy {strategy!r}; known: {', '.join(STRATEGIES)}", err=True
+        )
+        raise typer.Exit(EXIT_USAGE_ERROR)
+    first = date.fromisoformat(start) if start else period.start
+    last = date.fromisoformat(end) if end else period.end
+    calendar = TradingCalendar()
+    try:
+        source = DailyBarSource(data_dir, calendar)
+    except DataError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(EXIT_DATA_ERROR) from exc
+    chosen = STRATEGIES[strategy]()
+    result = run_backtest(settings, chosen, source, start=first, end=last, calendar=calendar)
+    manifest = build_manifest(
+        settings=settings,
+        strategy=chosen,
+        source=source,
+        start=first,
+        end=last,
+        git_commit=git_commit,
+        variants_tried=variants_tried,
+    )
+    write_results(out_dir, manifest, metrics_for(result, source, settings), result)
+    typer.echo(f"run_id: {manifest['run_id']}")
+    typer.echo(f"results: {out_dir}")
 
 
 @app.command()

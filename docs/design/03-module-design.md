@@ -82,7 +82,8 @@ AI-Trader/
 domain        <- everything may import domain
 config, clock <- may import domain
 fees          -> domain only
-strategy      -> domain only
+indicators    -> domain only (pure decimal indicators: SMA, ATR, RSI, volatility)
+strategy      -> domain, indicators
 risk          -> domain, config, fees
 portfolio     -> domain only
 execution     -> domain, risk (types only), portfolio, broker (port only)

@@ -193,3 +193,10 @@ def test_canonical_encoding_of_dates_and_enums() -> None:
     assert _canonical(Mode.PAPER) == "paper"
     with pytest.raises(TypeError):
         _canonical(object())
+
+
+def test_require_backtest_needs_a_backtest_section(config_dir: Path) -> None:
+    paper = load_settings(Mode.PAPER, config_dir)
+    with pytest.raises(ConfigError, match="no 'backtest' section"):
+        paper.require_backtest()
+    assert load_settings(Mode.BACKTEST, config_dir).require_backtest().initial_capital_usd > 0

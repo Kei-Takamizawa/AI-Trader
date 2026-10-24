@@ -44,11 +44,8 @@ jobs:
       - name: Tests with coverage
         run: uv run pytest --cov=aitrader --cov-report=term-missing
 
-      - name: Coverage gate for the core packages (>= 90%)
-        run: >-
-          uv run coverage report
-          --include='src/aitrader/domain/*,src/aitrader/config/*,src/aitrader/clock/*,src/aitrader/fees/*,src/aitrader/risk/*,src/aitrader/portfolio/*,src/aitrader/execution/*,src/aitrader/broker/*'
-          --fail-under=90
+      - name: Coverage gate (>= 90% for every package)
+        run: uv run coverage report --include='src/aitrader/*' --fail-under=90
 
       - name: CLI smoke test
         run: |
@@ -60,3 +57,12 @@ jobs:
           code=$?
           set -e
           test "$code" -eq 3
+
+      - name: Backtest smoke test (same inputs give byte-identical results)
+        run: |
+          for run in a b; do
+            uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir "bt-$run" \
+              --start 2023-01-03 --end 2024-12-31 --git-commit "$GITHUB_SHA"
+          done
+          diff -r bt-a bt-b
+          cat bt-a/manifest.yaml

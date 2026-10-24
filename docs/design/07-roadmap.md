@@ -44,7 +44,7 @@ Earliest realistic LIVE_MICRO start: roughly 5–8 months after P1 starts [A], b
 | TASK-004 | Order manager state machine, order gate, `SimBroker`, fault tests | 002, 003 |
 | TASK-005 | Backtest event loop, fill and cost models, metrics, run manifest, CLI `backtest` | 004 |
 | TASK-006 | Market data ingestion (Alpaca, read-only, decision Q2), quality gate, Parquet store | 005, owner sign-up |
-| TASK-007 | Baseline strategies S1/S2 + walk-forward runner + research report | 006 |
+| TASK-007 | Baseline strategy S1 + walk-forward runner + research report (S2 was implemented in TASK-005) | 006 |
 | TASK-008 | Webull adapter on the official SDK + broker contract tests (sandbox runs allowed once the design is approved, decision Q10) | 004 |
 
 TASK-001 is specified in detail in document 10. Later tasks are specified one at a time after the previous one is merged.

@@ -53,6 +53,9 @@ def test_unmodified_project_keeps_all_contracts(tmp_path: Path) -> None:
         ("strategy/__init__.py", "import aitrader.fees"),
         ("portfolio/ledger.py", "import aitrader.config"),
         ("execution/manager.py", "import aitrader.broker.sim"),
+        ("indicators/__init__.py", "import aitrader.strategy"),
+        ("data/bars.py", "import pandas"),
+        ("risk/engine.py", "import exchange_calendars"),
     ],
 )
 def test_forbidden_import_breaks_a_contract(tmp_path: Path, module: str, statement: str) -> None:
