@@ -17,6 +17,9 @@ from aitrader.domain.types import StrictDecimal
 class PaperStatus(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    strategy_id: str
+    strategy_version: str
+    purpose: Literal["reference", "observation"]
     state: Literal["NOT_STARTED", "RUNNING", "HALTED"]
     reason: str
     as_of: datetime
@@ -57,10 +60,21 @@ def write_status(state_dir: Path, status: PaperStatus) -> None:
     atomic_write(state_dir / "status/latest.json", canonical_json(status.model_dump()) + "\n")
 
 
-def write_daily(state_dir: Path, snapshot: SessionSnapshot, previous_equity: Decimal) -> None:
+def write_daily(
+    state_dir: Path,
+    snapshot: SessionSnapshot,
+    previous_equity: Decimal,
+    *,
+    strategy_id: str,
+    strategy_version: str,
+    purpose: Literal["reference", "observation"],
+) -> None:
     """Existing report files are immutable; provenance lives in the SQLite session row."""
     pnl = snapshot.equity_usd - previous_equity
     report = {
+        "strategy_id": strategy_id,
+        "strategy_version": strategy_version,
+        "purpose": purpose,
         **snapshot.model_dump(),
         "snapshot_hash": snapshot.snapshot_hash,
         "day_pnl_usd": pnl,
@@ -69,12 +83,26 @@ def write_daily(state_dir: Path, snapshot: SessionSnapshot, previous_equity: Dec
     lines = [
         f"# PAPER daily report — {snapshot.session}",
         "",
-        f"Virtual portfolio: USD {snapshot.equity_usd:.2f}. Day P&L: USD {pnl:+.2f}.",
-        f"Trading fees: USD {snapshot.fees_usd:.2f}.",
-        "",
-        "## Fills",
+        f"Strategy: {strategy_id} {strategy_version}. Purpose: {purpose}.",
         "",
     ]
+    if purpose == "observation":
+        lines.extend(
+            [
+                "Observation book: this strategy did not pass its research rules "
+                "and is not a LIVE candidate.",
+                "",
+            ]
+        )
+    lines.extend(
+        [
+            f"Virtual portfolio: USD {snapshot.equity_usd:.2f}. Day P&L: USD {pnl:+.2f}.",
+            f"Trading fees: USD {snapshot.fees_usd:.2f}.",
+            "",
+            "## Fills",
+            "",
+        ]
+    )
     lines.extend(
         f"- {item.fill.side.value} {item.fill.quantity} {item.fill.symbol} "
         f"at USD {item.fill.price}; fees USD {item.fees_usd}."

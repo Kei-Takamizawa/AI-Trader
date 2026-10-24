@@ -17,7 +17,7 @@ from aitrader.domain import BrokerEnvironment, Mode
 from aitrader.fees import WEBULL_JP, ExecutionAssumptions
 from aitrader.metrics import EquityPoint, buy_and_hold, max_drawdown
 from aitrader.storage import Database, SingleInstanceLock
-from aitrader.strategy import MomentumStrategy, params_hash
+from aitrader.strategy import STRATEGIES, Strategy, params_hash
 
 EXIT_PAPER_MISMATCH = 6
 EXIT_DATA_ERROR = 4
@@ -35,7 +35,7 @@ class PaperMismatchError(Exception):
     """A book must retain its identity and reproduce every recorded session."""
 
 
-def _book(settings: Settings, paper: PaperSettings, strategy: MomentumStrategy) -> dict[str, str]:
+def _book(settings: Settings, paper: PaperSettings, strategy: Strategy) -> dict[str, str]:
     return {
         "start": paper.start.isoformat(),
         "strategy_id": strategy.strategy_id,
@@ -99,7 +99,8 @@ def _status(
     benchmark: list[EquityPoint],
 ) -> PaperStatus:
     paper = _validate_mode(settings)
-    books = db.query("SELECT start, simulation FROM paper_book")
+    books = db.query("SELECT * FROM paper_book")
+    strategy = STRATEGIES[paper.strategy]()
     simulation = (
         SimulationSettings.model_validate_json(books[0]["simulation"])
         if books
@@ -126,6 +127,9 @@ def _status(
     while not calendar.is_session(completed) or calendar.session_close(completed) > now:
         completed = calendar.previous_session(completed)
     return PaperStatus(
+        strategy_id=books[0]["strategy_id"] if books else strategy.strategy_id,
+        strategy_version=books[0]["strategy_version"] if books else strategy.version,
+        purpose=paper.purpose,
         state=state,
         reason=reason,
         as_of=now,
@@ -172,13 +176,18 @@ def run_paper(
         data_end = None
         benchmark: list[EquityPoint] = []
         try:
-            strategy = MomentumStrategy()
+            strategy = STRATEGIES[paper.strategy]()
             book = _book(settings, paper, strategy)
+            try:
+                _verify_book(db, book)
+            except PaperMismatchError as exc:
+                # A different book must not overwrite even the existing status file.
+                status = _status(db, settings, clock, git_commit, None, "HALTED", str(exc), [])
+                return PaperRun(status, 0, EXIT_PAPER_MISMATCH)
             spy = source.bars("SPY")
             if not spy:
                 raise DataError("no SPY sessions in local data")
             data_end = spy[-1].ts.date()
-            _verify_book(db, book)
             last = through if through is not None else data_end
             if last > data_end:
                 raise ValueError(f"through {last} is later than data_end {data_end}")
@@ -232,7 +241,14 @@ def run_paper(
                 previous = paper.initial_capital_usd
                 for snapshot in result.sessions:
                     try:
-                        write_daily(state_dir, snapshot, previous)
+                        write_daily(
+                            state_dir,
+                            snapshot,
+                            previous,
+                            strategy_id=strategy.strategy_id,
+                            strategy_version=strategy.version,
+                            purpose=paper.purpose,
+                        )
                     except OSError as exc:
                         raise DataError(f"daily report {snapshot.session}: {exc}") from exc
                     previous = snapshot.equity_usd
@@ -267,9 +283,14 @@ def halt_data_failure(
     settings: Settings, state_dir: Path, clock: Clock, git_commit: str, reason: str
 ) -> PaperRun:
     """Publish a data-loading failure even when no source could be constructed."""
-    _validate_mode(settings)
+    paper = _validate_mode(settings)
     state_dir.mkdir(parents=True, exist_ok=True)
     with SingleInstanceLock(state_dir / "paper.db"), Database(state_dir / "paper.db") as db:
+        try:
+            _verify_book(db, _book(settings, paper, STRATEGIES[paper.strategy]()))
+        except PaperMismatchError as exc:
+            status = _status(db, settings, clock, git_commit, None, "HALTED", str(exc), [])
+            return PaperRun(status, 0, EXIT_PAPER_MISMATCH)
         status = _status(db, settings, clock, git_commit, None, "HALTED", reason, [])
         write_status(state_dir, status)
         return PaperRun(status, 0, EXIT_DATA_ERROR)

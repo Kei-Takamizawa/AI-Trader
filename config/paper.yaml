@@ -4,6 +4,8 @@ mode: paper
 broker_environment: sim
 
 paper:
+  strategy: S1
+  purpose: reference
   start: 2026-10-26
   initial_capital_usd: 323         # USD book; initial JPY equivalent is 323 * 155 = 50,065
   fx_jpy_per_usd: 155              # fixed reporting rate, as in BACKTEST

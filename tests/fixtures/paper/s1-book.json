@@ -1,0 +1,9 @@
+{
+  "id": 1,
+  "start": "2023-10-02",
+  "strategy_id": "S1",
+  "strategy_version": "1.0.0",
+  "params_hash": "c41f5b33acaafade3766028f98323bf23c8fc491ca0f2ebe539c53778baf52fd",
+  "simulation": "{\"dividend_jp_withholding_pct\":\"20.315\",\"dividend_us_withholding_pct\":\"10\",\"fx_jpy_per_usd\":\"155\",\"half_spread_bps\":\"1\",\"initial_capital_usd\":\"323\",\"max_participation_pct\":\"1\"}",
+  "risk_hash": "2ac5b7157eda15268dc956d479a6ecc1c3cc6cb7a0119a29c0f34c6a7fd43af1"
+}

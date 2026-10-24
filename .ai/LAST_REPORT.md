@@ -1,121 +1,132 @@
-# LAST_REPORT — TASK-014 / review round 1
+# LAST_REPORT — TASK-015
 
 Status: DONE
 
 ## Summary
 
-Fixed R1: after replay verification and session persistence, PAPER now attempts daily report
-creation for every replayed session up to `through`, including previously recorded sessions.
-The existing writer independently preserves each existing JSON or Markdown file. A daily-report
-I/O failure publishes HALTED with the affected date and reason, returns exit code 4, and leaves
-committed sessions available for report recovery on the next successful run. Added offline
-regression tests and the requested setup documentation sentence.
+Added S3 1.0.0 as a separate PAPER observation book while retaining the default S1 1.0.0
+reference book and its exact pre-task identity. PAPER selects the configured default strategy,
+shows strategy/version/purpose in status and daily reports, and includes the strategy ID in the
+CLI summary. Cross-strategy book mismatches return exit 6 without replacing existing status,
+sessions or reports, including when local data loading fails. Setup instructions document both
+books and their separate state directories; observation results cannot promote S3 to LIVE.
 
-Task / cycle: TASK-014 / cycle 7 / review round 1. Execution platform: local operator Mac,
-Python 3.14.7. Starting branch: `claude/project-thread-whk5dv`; HEAD:
-`178b35163d4d63d7478d3a993b6e54fdf87d4047`. The initial working tree was clean.
+Task / cycle: TASK-015 / cycle 8. Execution platform: local operator Mac, Python 3.14.7.
+Starting branch: `claude/project-thread-whk5dv`; HEAD:
+`751f10e0f18aada7b3477c63de93708bd0a14954`. The initial working tree was clean.
 The complete `.ai/CURRENT_TASK.md` was already present, read fully and retained unchanged.
-The task explicitly accepts implementation `1a4c33e`; this round addresses its R1 follow-up only.
+No conflicting task or design requirement was found.
 
 ## Files changed
 
-.ai/LAST_REPORT.md
-docs/dev/setup.md
-src/aitrader/app/paper.py
-tests/integration/test_paper.py
+- `.ai/LAST_REPORT.md`
+- `config/paper.yaml`
+- `config/paper-s3.yaml` (added)
+- `docs/dev/setup.md`
+- `src/aitrader/app/paper.py`
+- `src/aitrader/app/paper_reports.py`
+- `src/aitrader/cli/main.py`
+- `src/aitrader/config/settings.py`
+- `tests/fixtures/paper/README.md` (added)
+- `tests/fixtures/paper/s1-book.json` (added)
+- `tests/integration/test_paper.py`
 
 ## Commands run
 
-All uv commands used `UV_CACHE_DIR=.uv-cache UV_OFFLINE=1 UV_NO_SYNC=1`, keeping the cache
-inside the repository and using installed dependencies without downloads.
+Final uv checks used `UV_CACHE_DIR=.uv-cache UV_OFFLINE=true` so the cache stays inside the
+repository and dependency downloads are disabled. No dependency was added.
 
-- `uv run ruff check` — PASS, all checks passed.
-- `uv run ruff format --check` — PASS, 166 files already formatted.
-- `uv run mypy` — PASS, no issues in 165 source files.
-- `uv run lint-imports` — PASS, 10 contracts kept, 0 broken.
-- `uv run pytest --cov=aitrader` — PASS, 1,446 passed in 50.73 seconds.
-- `uv run coverage report --include='src/aitrader/*' --fail-under=90` — PASS,
-  5,276 statements and 1,320 branches, zero missed statements or branches, 100% coverage.
-  `aitrader.app.paper` and `aitrader.app.paper_reports` are both 100%.
-- `uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir bt-a --start 2023-01-03 --end 2024-12-31`
-  — PASS, run ID `bt-f23bd00457699f44`.
-- `uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir bt-b --start 2023-01-03 --end 2024-12-31`
-  — PASS, same run ID.
-- `diff -r bt-a bt-b && rm -rf bt-a bt-b` — PASS, byte-identical output; temporary outputs removed.
-- `git diff --check` — PASS.
-- `git diff --stat` — reviewed; implementation diff shown below, plus this report.
+| Command | Result |
+| --- | --- |
+| `uv run ruff check` | PASS: All checks passed |
+| `uv run ruff format --check` | PASS: 166 files already formatted |
+| `uv run mypy` | PASS: no issues in 165 source files |
+| `uv run lint-imports` | PASS: 10 contracts kept, 0 broken |
+| `uv run pytest --cov=aitrader` | PASS: 1460 passed in 49.33s |
+| `uv run coverage report --include='src/aitrader/*' --fail-under=90` | PASS: 100% in every source file; 5291 statements, 1322 branches, zero misses/partial branches |
+| `uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir bt-a --start 2023-01-03 --end 2024-12-31` | PASS: run ID `bt-7406778ee29907d6` |
+| `uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir bt-b --start 2023-01-03 --end 2024-12-31` | PASS: same run ID |
+| `diff -r bt-a bt-b && rm -rf bt-a bt-b` | PASS: exit 0, byte-identical including commit-derived fields; temporary outputs removed |
+| `git diff --check` | PASS: no whitespace errors |
 
-An initial targeted PAPER test run failed only because a new assertion expected the prose
-`0 sessions added` rather than the existing CLI output `sessions_added=0`. Corrected the new
-assertion to match the actual CLI; the full suite then passed. No existing test was changed,
-disabled or weakened. One initial read-only file search hit an unmatched shell glob; a subsequent
-read used the actual test path.
+Additional verification: before implementation, two fixture PAPER runs (default settings and
+`config/paper.yaml`, start moved to 2023-10-02, through 2023-10-30) both returned exit 0 and
+identical complete book rows. Their captured row is the regression-test fixture listed above;
+temporary databases were removed. The initial focused PAPER test run passed 94 tests; the final
+suite includes two more cases covering data-loading failure during cross-strategy refusal.
+An earlier full run passed 1458 tests at 100% coverage before those two cases were added.
+`uv run ruff format` applied formatting before the final checks.
+
+### Errors and warnings resolved during work
+
+- The first offline uv probe could not access the default external cache (`Operation not
+  permitted`). Subsequent commands used the repository-local cache; no escalation or download.
+- A temporary baseline script initially called nonexistent `Settings.require_paper`; corrected
+  to use the validated `settings.paper` before capturing the baseline. No product change needed.
+- Initial lint/type checks found the new test's parametrize argument style, an implicit module
+  re-export and an optional-settings access. Corrected those tests; final checks above pass.
+- No unresolved errors or warnings in the final checks.
 
 ## Acceptance criteria
 
-- [x] Recover each missing report for all verified recorded sessions up to `through` —
-  `test_missing_daily_reports_recovered_without_inserts` deletes JSON and Markdown files on
-  different dates and verifies exact original bytes on recovery. It covers the initial-capital
-  previous-equity rule and later-session daily P&L, with zero inserted sessions and unchanged DB rows.
-- [x] Never rewrite existing files — both recovery tests compare existing report bytes and
-  nanosecond modification times; existing immutability tests pass unchanged.
-- [x] Respect earlier `through` — recovery test runs with both FIRST_END and END; missing
-  reports after an earlier `through` remain missing and later recorded sessions remain unchanged.
-- [x] Report a post-commit write failure as exit 4 / HALTED, then recover —
-  `test_report_failure_after_commit_halts_and_next_cli_run_recovers`, parameterized for JSON
-  and Markdown failures, verifies committed catch-up rows, the persisted HALTED reason, partial
-  report pairs, subsequent RUNNING status, zero inserts, exact recovery bytes and unchanged
-  existing reports. This exercises the real CLI and real atomic writer except at the injected failure.
-- [x] Document recovery — added the requested sentence in the PAPER section of `docs/dev/setup.md`.
-- [x] All mandatory checks green and touched-module coverage 100% — commands above.
-- [x] TASK-014 implementation retained — no changes to strategies, walk-forward, metrics,
-  backtest, configuration, risk or execution. All existing S3, stability, cost-share, snapshot
-  and PAPER tests pass unchanged, including the S3-R1 fixture CLI test.
-- [x] Protected paths and configuration files unchanged — reviewed diff paths and stat.
+- [x] Default settings and `config/paper.yaml` retain the S1 book identity —
+  `test_s1_book_matches_pre_task_fixture` compares every column with the pre-task captured row.
+- [x] S3 config loads with the same start/simulation/risk as S1; S3 snapshots and hashes match
+  plain `run_backtest(..., capture_sessions=True)` — `test_s3_config_and_fixture_parity`.
+- [x] S3 against S1 state and S1 against S3 state return exit 6 without changing database,
+  status or daily report bytes — `test_cli_refuses_other_strategy_without_writing`, both
+  directions with available and missing data. Lock acquisition retains the existing mechanism.
+- [x] Status and reports show strategy/version/purpose; the exact observation sentence appears
+  only for observation — `test_book_metadata_in_status_and_daily_reports`, all four
+  strategy/purpose combinations. CLI strategy output is checked in the refusal test's first run.
+- [x] Unknown strategy/purpose produce configuration exit 2 before state creation —
+  `test_cli_unknown_paper_setting` (S2, unknown strategy, candidate purpose).
+- [x] All existing and new tests pass; coverage remains 100% — final full suite above.
+- [x] Fixture backtest double run is byte-identical — `diff -r` exit 0.
+- [x] All AGENTS.md checks pass — final command table above.
+- [x] Protected paths unchanged — protected-path `git diff --name-only` returned no output;
+  implementation diff stat below contains no protected path.
 
-### Prior TASK-014 acceptance evidence
+### Implementation diff stat
 
-The accepted implementation's committed `.ai/LAST_REPORT.md` at `1a4c33e` records the original
-S1/S2 before/after walk-forward comparisons, pre-task backtest byte comparison, and fixture
-wall times. These comparisons and timings were not repeated in this PAPER-only review round;
-the implementation paths they cover are unchanged. The current double backtest comparison
-above is a fresh two-run determinism check, not a new comparison with the original pre-TASK-014
-artifact. Run identity includes Git provenance, which differs from the prior implementation run.
-
-For continuity, the prior report recorded single fixture observations (not newly measured here):
-S1 walk-forward 3.043 s before TASK-014 and 2.953 s after; S2 2.339 s and 2.233 s. Its isolated
-S1 snapshot-capture comparison was 2.550 s with capture versus 1.536 s without capture.
-The fixtures contain IWM, QQQ and SPY; GLD and SHY are missing, as recorded in that report.
-
-### Diff stat
-
-Implementation-only `git diff --stat` before writing this report:
+Output of `git diff --stat -- . ':(exclude).ai/LAST_REPORT.md'`:
 
 ```text
- docs/dev/setup.md               |  1 +
- src/aitrader/app/paper.py       |  5 +--
- tests/integration/test_paper.py | 72 +++++++++++++++++++++++++++++++++++++++++
- 3 files changed, 76 insertions(+), 2 deletions(-)
+ config/paper.yaml                 |   2 +
+ docs/dev/setup.md                 |  20 ++++--
+ src/aitrader/app/paper.py         |  35 ++++++++--
+ src/aitrader/app/paper_reports.py |  38 +++++++++--
+ src/aitrader/cli/main.py          |   1 +
+ src/aitrader/config/settings.py   |   2 +
+ tests/integration/test_paper.py   | 133 ++++++++++++++++++++++++++++++++++++--
+ 7 files changed, 209 insertions(+), 22 deletions(-)
 ```
 
-This report is the fourth changed file. No other tracked files are changed.
+Git diff does not include untracked additions: `config/paper-s3.yaml`,
+`tests/fixtures/paper/README.md`, `tests/fixtures/paper/s1-book.json`. They are included in the
+complete Files changed list, along with this report.
 
-## GUI verification
+## Expected / Actual and GUI verification
 
-NOT_RUN: this is an offline CLI/report recovery change; there is no GUI operation.
-Expected: preserve committed session history, recreate only missing reports through the verified
-replay boundary, publish HALTED on report I/O failure and return to RUNNING after recovery.
-Actual: all expectations verified by the tests above, using synthetic data.
+Expected: independent S1 reference and S3 observation books, unchanged simulation/risk values,
+exact fixture replay parity, refusal of mixed books and explicit observation labelling.
+Actual: all verified by the offline tests and commands above.
+GUI: NOT_RUN; this task changes configuration, a CLI runner and generated report files, with
+no application GUI. CLI flows and report contents were verified programmatically.
 
 ## Deviations from the task or the design
 
-None. Existing report serialization, snapshot hashes, previous-equity calculations and
-transaction boundaries are retained.
+None. Existing book/session identity checks and immutable report behavior are retained.
+Book identity mismatches return HALTED to the caller without overwriting the other book's
+persisted status; historical session mismatches still publish HALTED as before.
 
 ## Open issues and questions
 
-None requiring a designer decision. Recovery requires that the subsequent run can write the
-missing report files and status. No new dependency, network request, credential access,
-protected-path edit, configuration edit, LIVE enablement or Git mutation was performed.
-Real-data research, real PAPER operation, S3 PAPER adoption and deployment were intentionally
-not run. Git staging, commit and push remain the operator's responsibility under AGENTS.md.
+None. No decision from Claude is required for this task.
+
+## Intentionally not performed
+
+No real-data PAPER run, data fetch, external API call, scheduling, notification, LIVE enablement,
+risk/strategy/execution change, protected-path edit, Git staging, commit, push or branch change.
+The operator starts the two real-data books after the first closed session on or after
+2026-10-26 and performs all Git work.
