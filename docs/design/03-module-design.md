@@ -241,7 +241,7 @@ Operational rules: SDK retries are not relied on for POST requests; a timeout ma
 | `equity_curve` | Daily equity | date, equity_usd, equity_jpy, fx_rate, trading_pnl, operating_costs |
 | `risk_events` | Rule breaches, circuit breakers | ts, rule_id, severity, details_json |
 | `halts` | Halt state transitions | ts, from_state, to_state, reason, actor (system / owner) |
-| `reconciliations` | Results | ts, scope, status, diff_json |
+| `reconciliations` | Results | ts, scope (FULL / ORDERS_AND_POSITIONS), outcome (CLEAN / MISMATCH / INCOMPLETE), report_json (differences, unresolved orders) |
 | `incidents` | Anything needing attention | incident_id, ts, severity, summary, status |
 
 All monetary values are stored as decimal strings with an explicit currency. All timestamps are UTC ISO-8601.

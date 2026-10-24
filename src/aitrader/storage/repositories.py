@@ -12,6 +12,7 @@ from aitrader.execution import (
     check_transition,
 )
 from aitrader.portfolio import JournalEntry, Ledger
+from aitrader.reconcile import ReconciliationReport
 from aitrader.risk import Actor, HaltReason, HaltStateMachine, HaltTransition
 from aitrader.storage.database import Database, StorageError
 
@@ -278,3 +279,30 @@ def journal_entries(db: Database) -> Iterable[JournalEntry]:
     """The stored journal, oldest first (for reports and reconciliation)."""
     rows = db.query("SELECT entry_json FROM journal ORDER BY seq")
     return [JournalEntry.model_validate_json(r["entry_json"]) for r in rows]
+
+
+class ReconciliationLog:
+    """Stored reconciliation reports (document 03 §6, ``reconciliations``)."""
+
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    def record(self, report: ReconciliationReport) -> None:
+        with self._db.transaction() as conn:
+            conn.execute(
+                "INSERT INTO reconciliations (ts, scope, outcome, report_json) VALUES (?, ?, ?, ?)",
+                (
+                    _ts(report.ts),
+                    report.scope.value,
+                    report.outcome.value,
+                    report.model_dump_json(),
+                ),
+            )
+
+    def all(self) -> list[ReconciliationReport]:
+        rows = self._db.query("SELECT report_json FROM reconciliations ORDER BY seq")
+        return [ReconciliationReport.model_validate_json(r["report_json"]) for r in rows]
+
+    def latest(self) -> ReconciliationReport | None:
+        rows = self._db.query("SELECT report_json FROM reconciliations ORDER BY seq DESC LIMIT 1")
+        return ReconciliationReport.model_validate_json(rows[0]["report_json"]) if rows else None

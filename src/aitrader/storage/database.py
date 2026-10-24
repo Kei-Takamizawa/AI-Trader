@@ -73,6 +73,15 @@ SCHEMA: tuple[tuple[str, ...], ...] = (
             expires_at TEXT NOT NULL
         )""",
     ),
+    (
+        """CREATE TABLE reconciliations (
+            seq INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts TEXT NOT NULL,
+            scope TEXT NOT NULL,
+            outcome TEXT NOT NULL,
+            report_json TEXT NOT NULL
+        )""",
+    ),
 )
 """Migrations: ``SCHEMA[n]`` takes the database from version ``n`` to ``n + 1``."""
 
