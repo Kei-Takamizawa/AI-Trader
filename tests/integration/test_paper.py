@@ -66,6 +66,7 @@ def replay(source: DailyBarSource) -> BacktestResult:
         start=START,
         end=END,
         simulation=PaperSettings(start=START).simulation(),
+        capture_sessions=True,
     )
 
 

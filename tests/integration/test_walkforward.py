@@ -100,7 +100,7 @@ def test_selection_known_scores_and_grid() -> None:
     ]
     assert len(variants("S2")) == 1
     with pytest.raises(DataError, match="unknown"):
-        variants("S3")
+        variants("UNKNOWN")
 
 
 def test_s1_end_to_end(tmp_path: Path) -> None:

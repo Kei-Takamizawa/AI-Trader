@@ -194,3 +194,12 @@ Statistics: paired block bootstrap of daily return differences, reported with co
 - No component, including the AI service, can write parameters or rules at runtime.
 - Improvement ideas (from Claude, Muse or the owner) go to a **research environment** (separate branch, database and data snapshot): walk-forward test → untouched hold-out → shadow paper → review → owner approval for anything that affects risk → release with a new version.
 - Any learned model (if ever used) is trained offline, frozen as a file with a hash and promoted through the same process.
+
+## 10. S3 — Trend-filtered core holding (1.0.0)
+
+TASK-014 implements the [declared S3 plan](../research/2026-10-24-s3-plan.md): weekly
+review of fixed SPY, QQQ, IWM and GLD slots, each targeting 25% while strictly above its
+trend average. SHY targets the unwanted slots without a trend filter. Entries carry
+ATR(20) protective stops; existing risk and execution limits still apply. The declared
+grid order is trend periods (200, 150) × ATR stop multiples (3, 2). S3-R1's 1.0% risk
+family is owner-approved research only (2026-10-24). PAPER remains S1 1.0.0.

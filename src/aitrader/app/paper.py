@@ -195,6 +195,7 @@ def run_paper(
                     start=first,
                     end=last,
                     simulation=paper.simulation(),
+                    capture_sessions=True,
                 )
                 _verify_sessions(db, result.sessions, last)
                 rows = db.query("SELECT MAX(session) AS last FROM paper_sessions")

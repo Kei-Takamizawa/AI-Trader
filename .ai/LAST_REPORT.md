@@ -1,216 +1,154 @@
-# LAST_REPORT — TASK-013
+# LAST_REPORT — TASK-014
 
 Status: DONE
 
 ## Summary
 
-Implemented PAPER stage 1 with the existing S1 1.0.0 strategy, daily-bar BACKTEST engine,
-risk checks, execution path and SimBroker. The local runner verifies the book identity and all
-recorded sessions through the requested date before transactionally appending new sessions;
-mismatches publish HALTED and exit 6. Added immutable session snapshots, a SQLite schema-3
-migration, atomic status and daily reports, CLI commands and operator instructions.
+Implemented S3 1.0.0 with fixed core slots, strict weekly trend filtering, defensive SHY allocation,
+and deterministic exits, reductions and entries. Added the declared S3 walk-forward grid,
+reporting-only neighbour stability and independent-fold cost aggregation for all strategies.
+Session snapshots are now opt-in; the PAPER runner explicitly captures them. Updated research
+commands and document 11 without changing S1/S2 trading rules or protected paths.
 
-Cycle: TASK-013, one implementation/verification cycle. Execution terminal: local macOS,
-Darwin arm64, Python 3.14.7. Starting branch: `claude/project-thread-whk5dv`; starting and ending
-HEAD: `52c9f49e3e0bf86257add98a4f42ddc12b66301b`. The initial working tree was clean.
-The complete approved task remains unchanged in `.ai/CURRENT_TASK.md`.
+Task / cycle: TASK-014 / cycle 7. Execution platform: operator Mac, local offline repository.
+Initial branch: `claude/project-thread-whk5dv`; HEAD: `72fcb6f0b6105a7b61d25fbad9a0e62341c806a1`.
+The initial working tree was clean. `.ai/CURRENT_TASK.md` already contained the complete task
+and was read fully and retained unchanged. No Git mutation was performed.
 
 ## Files changed
 
-- `.ai/LAST_REPORT.md`
-- `config/paper.yaml`
-- `docs/dev/setup.md`
-- `pyproject.toml`
-- `src/aitrader/app/paper.py` (new)
-- `src/aitrader/app/paper_reports.py` (new)
-- `src/aitrader/backtest/engine.py`
-- `src/aitrader/backtest/snapshots.py` (new)
-- `src/aitrader/cli/main.py`
-- `src/aitrader/config/__init__.py`
-- `src/aitrader/config/loader.py`
-- `src/aitrader/config/settings.py`
-- `src/aitrader/storage/database.py`
-- `tests/architecture/test_import_contracts.py`
-- `tests/contract/test_sandbox_check.py`
-- `tests/integration/test_paper.py` (new)
-- `tests/unit/broker/test_webull_tokens.py`
-- `tests/unit/cli/test_cli.py`
-- `tests/unit/config/test_loader.py`
-- `tests/unit/reconcile/test_reconciler.py`
-
-Existing configuration tests now use the required PAPER start and USD capital. Sandbox CLI
-tests patch the same adapter/check classes at their defining modules because Webull imports
-now occur only inside the sandbox command. The old-schema reconciliation test expects the
-latest schema version while preserving its reconciliation assertions. No test was weakened,
-skipped, disabled or marked expected-to-fail.
+.ai/LAST_REPORT.md
+docs/design/11-strategy-and-ai-analysis.md
+docs/dev/setup.md
+src/aitrader/app/paper.py
+src/aitrader/backtest/engine.py
+src/aitrader/backtest/walkforward.py
+src/aitrader/cli/main.py
+src/aitrader/strategy/__init__.py
+src/aitrader/strategy/trend_core.py
+tests/integration/test_paper.py
+tests/integration/test_s3_reporting.py
+tests/integration/test_walkforward.py
+tests/unit/strategy/test_trend_core.py
 
 ## Commands run
 
-Every successful `uv run` below used `UV_CACHE_DIR=.uv-cache UV_OFFLINE=1` to keep execution
-inside the repository and prevent downloads. No new dependency was required or installed.
+All successful uv commands used `UV_CACHE_DIR=.uv-cache UV_OFFLINE=1 UV_NO_SYNC=1` to keep
+cache writes in the repository and prohibit dependency downloads. Existing installed dependencies
+were sufficient. An initial uv invocation using its default cache failed with a sandbox
+permission error; rerunning with the repository-local cache resolved it without escalation.
 
-| Command | Result |
-|---|---|
-| `uv run ruff check` | PASS — All checks passed |
-| `uv run ruff format --check` | PASS — 163 files already formatted |
-| `uv run mypy` | PASS — no issues in 162 source files |
-| `uv run lint-imports` | PASS — 10 contracts kept, 0 broken |
-| `uv run pytest --cov=aitrader` | PASS — 1,412 passed in 46.61 seconds, no warnings |
-| `uv run coverage report --include='src/aitrader/*' --fail-under=90` | PASS — every module 100%; total 5,159 statements, 1,270 branches, none missed |
-| `uv run pytest tests/integration/test_paper.py --cov=aitrader --cov-report=term-missing:skip-covered` | PASS — 78 PAPER tests; full-suite coverage measured separately above |
-| `uv run ruff format` | PASS — formatting applied before final checks |
-| `git diff --check` | PASS |
+- `uv run ruff check` — PASS, all checks passed.
+- `uv run ruff format` — PASS; formatted changed Python files.
+- `uv run ruff format --check` — PASS, 166 files already formatted.
+- `uv run mypy` — PASS, no issues in 165 source files.
+- `uv run lint-imports` — PASS, 10 contracts kept, 0 broken.
+- `uv run pytest --cov=aitrader` — PASS, 1,442 passed in 50.04 seconds.
+- `uv run coverage report --include='src/aitrader/*' --fail-under=90` — PASS,
+  5,275 statements, 1,322 branches, zero missed statements or branches, 100% coverage.
+- `uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir bt-a --start 2023-01-03 --end 2024-12-31`
+  — PASS, run ID `bt-5b263a4573f70625`.
+- `uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir bt-b --start 2023-01-03 --end 2024-12-31`
+  — PASS, same run ID.
+- `diff -r bt-a bt-b && rm -rf bt-a bt-b` — PASS. Before removal, also compared `bt-a`
+  against the saved pre-task backtest: all three output files were byte-identical, including
+  manifest, run ID, metrics and equity CSV.
+- Fixture walk-forward, before and after, for each of S1 and S2:
+  `uv run aitrader walkforward --data-dir tests/fixtures/bars --out-dir <output> --strategy <S1|S2> --start 2023-01-03 --train-months 6 --test-months 3 --holdout-months 3`
+  — PASS. Recursively compared every pre-existing JSON field and list entry; all matched.
+  Manifests were byte-identical. Only the requested new report fields were added.
+- `uv run aitrader walkforward --data-dir tests/fixtures/bars --out-dir <output> --strategy S3 --start 2023-01-03 --train-months 6 --test-months 3 --holdout-months 3 --risk-per-trade-pct 1.0 --prior-variants 21`
+  — PASS; also covered by `test_s3_cli_and_cash_proxy_refusal`.
+- `uv run aitrader backtest --strategy S3 --data-dir tests/fixtures/bars --out-dir <output> --start 2023-01-03 --end 2024-12-31`
+  — PASS, run ID `bt-dc9861285deedc0e`.
+- `git diff --check` — PASS.
 
-### BACKTEST compatibility
+Intermediate test failures exposed the CLI's separate S1/S2 allow-list, an incorrect expected
+cost ratio in a new test, and a new stop test whose flat core prices failed the trend filter.
+These were corrected before the successful final checks. No test was disabled or weakened.
 
-Before changing source or configuration, ran:
+### Fixture wall time
 
-```bash
-uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir .task013-baseline --start 2023-01-03 --end 2024-12-31
-```
+Same CLI fixture protocol above, single observations on the operator Mac:
 
-After implementation, ran the required fixture backtest twice:
+| Strategy | Before task | After task, including neighbours |
+|---|---:|---:|
+| S1 | 3.043 s | 2.953 s |
+| S2 | 2.339 s | 2.233 s |
 
-```bash
-uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir bt-a --start 2023-01-03 --end 2024-12-31
-uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir bt-b --start 2023-01-03 --end 2024-12-31
-diff -r .task013-baseline bt-a
-diff -r bt-a bt-b
-```
-
-PASS — both differences exited 0 with no output. All three files (`manifest.yaml`,
-`metrics.json`, `equity.csv`) are byte-identical to the pre-task output and to each other.
-All runs reported `bt-e572cb2510f8c5eb`, with BACKTEST config hash
-`c8059f8f9c3fb693198cf6bbdaa97617e8d4eda91454b8271f066fd054ef9f95`.
-The baseline, `bt-a` and `bt-b` were removed after comparison.
-
-Baseline file SHA-256 values:
-
-```text
-manifest.yaml 6b97a2351e3d2b7601989327f9bc08ad011c78943a05560da09c0fecfc7bd465
-metrics.json  950594da2d70fda4f33126ff75ae96b19a2e3b1bfeeb8699c8f1f0059c56ad35
-equity.csv    1ce0a8f6a09cafd3c2e0dcf3be8e1e2919d304af941b8e4eee3bae2cbef39363
-```
-
-### PAPER command smoke test
-
-Created a temporary directory inside the repository, copied `config/base.yaml`, and wrote a
-PAPER configuration with `paper.start: 2023-10-02`. Invoked the installed `.venv/bin/aitrader`
-entry point twice, using the same options:
-
-```bash
-aitrader paper run --config <temporary>/config/paper.yaml --data-dir tests/fixtures/bars --state-dir <temporary>/state --through 2023-10-23 --git-commit 52c9f49e3e0bf86257add98a4f42ddc12b66301b
-```
-
-Expected / Actual: first run records 16 sessions; second adds none; both exit 0 with identical
-equity and last session. Actual outputs:
-
-```text
-Run 1: exit=0; RUNNING sessions_added=16 last_session=2023-10-23 equity_usd=321.92328057762
-Run 2: exit=0; RUNNING sessions_added=0 last_session=2023-10-23 equity_usd=321.92328057762
-```
-
-Temporary configuration, database and reports were removed automatically on exit. All data was
-synthetic fixture data; these results do not establish strategy profitability or real fills.
+To isolate snapshot capture from the newly added neighbour work, also timed the final S1
+`run_walkforward` with identical fixture parameters and neighbours enabled, wrapping its
+backtest call to set `capture_sessions=True` and then `False`: **2.550 s → 1.536 s**
+(about 39.8% less wall time). Manifest and complete reports matched exactly between these
+runs. These are single fixture measurements, not real-data performance claims.
 
 ## Acceptance criteria
 
-- [x] Every requested offline behavior and every existing test passes — 1,412 passed;
-  all modules retain 100% statement and branch coverage.
-- [x] First-run session parity — `test_first_run_parity_and_status` compares every stored
-  snapshot and hash with plain `run_backtest`, plus equity, ledger cash, positions and B0.
-- [x] Repetition, catch-up and older through dates —
-  `test_idempotence_and_catchup_then_older_through` checks rows, report bytes and modification
-  times, and verifies that existing later sessions remain intact.
-- [x] Tampered hashes, changed snapshots, malformed JSON and rehashed tampering halt without
-  new writes — `test_tampered_session_halts_without_any_writes`; actual changed fixture bars
-  are covered by `test_changed_market_data_halts_on_first_affected_close`.
-- [x] Changed start, simulation, risk, strategy parameters, ID or version needs a new directory
-  and exits 6 — `test_changed_book_needs_new_directory`; existing book start remains in status.
-- [x] Before-start and closed-day periods record no sessions — `test_not_started` and
-  `test_start_on_closed_day_without_sessions`.
-- [x] Future through dates, missing SPY and held locks are refused —
-  `test_after_data_end_refused_and_default_catches_up`, `test_missing_spy_halts`,
-  `test_lock_refused`, `test_cli_errors_and_lock`.
-- [x] A corporate action on a held SPY position halts with data exit 4, preserving existing
-  rows/reports and recording no sessions in a fresh directory —
-  `test_corporate_action_on_held_position_records_nothing`.
-- [x] Status, calendar staleness boundaries, fill fees, day P&L, intents, rejections and quality
-  findings are covered — `test_first_run_parity_and_status`,
-  `test_staleness_uses_last_completed_exchange_session`,
-  `test_reports_include_rejections_pending_reasons_and_findings`,
-  `test_distribution_uses_same_book_and_b0_tax_settings`.
-- [x] Atomic replacement and failure cleanup preserve the previous complete file; existing
-  reports are not rewritten — `test_atomic_file_replacement`,
-  `test_failed_atomic_write_leaves_old_complete_file`, `test_preexisting_reports_are_preserved`.
-- [x] SQLite migration preserves old tables and new sessions roll back as one transaction —
-  `test_schema_two_is_upgraded_without_changing_old_tables`,
-  `test_new_sessions_rollback_together_on_sqlite_failure`.
-- [x] Simulation defaults and numerical boundaries — `test_settings_defaults_and_simulation_validation`
-  and `test_simulation_thresholds`; BACKTEST config identity also verified against pre-task output.
-- [x] Building and running PAPER never imports Webull —
-  `test_cli_and_runner_import_without_webull` runs in a subprocess with a refusing import hook;
-  the added import contract and architecture mutation test enforce the boundary.
-- [x] Fixture BACKTEST outputs, manifest and run ID are byte-identical to pre-task output —
-  both directory comparisons above passed.
-- [x] Actual fixture PAPER command records sessions and a second command adds none —
-  smoke outputs above; temporary files removed.
-- [x] All six mandatory AGENTS.md checks are green.
-- [x] No protected path changed — the protected-path `git diff --name-only` check returned
-  no output for risk, hard caps, execution gate, Webull adapter and live configuration paths.
+- [x] Existing S1/S2 selections, chained equity and metrics unchanged — recursive comparison
+  with pre-task fixture reports and byte-identical manifests; full regression suite passes.
+- [x] Fixture double backtest is byte-identical to pre-task output — both diffs passed,
+  including manifest and run ID.
+- [x] S3 cases in scope A — `tests/unit/strategy/test_trend_core.py`: weekly review,
+  strict trend boundary, four core buys, two-slot defensive buy, deterministic intent ordering,
+  full core exit, full defensive exit, reduction just below/at/above the 5% band, quantity
+  rounding to zero, missing/stale bars, short trend/ATR history, zero/negative stops,
+  defensive trend bypass, no top-ups, and stable parameter identity.
+- [x] Declared grids and options — `test_declared_axes_and_neighbours`, existing S1 grid
+  checks, S3 CLI research options, and refusal of S3 cash proxy. Grid order is
+  (200, 3), (200, 2), (150, 3), (150, 2); S1 order is preserved.
+- [x] Stability and costs — `tests/integration/test_s3_reporting.py`: neighbours match
+  independent test runs, diagonal and nonadjacent points are excluded, positive/zero/negative
+  signs are distinct, S2 stability is null and excluded from counts, reporting-only neighbours
+  leave selection/equity/combined metrics unchanged, and cost aggregation is hand-checked for
+  positive, zero and negative gross P&L and annualisation.
+- [x] Snapshot capture is opt-in — `test_snapshot_opt_in`; captures and ordinary runs
+  have identical equity, intents and metrics. Existing PAPER assertions verify persisted
+  snapshot JSON, hashes, fills and reports against replay with explicit capture enabled.
+- [x] S3-R1 fixture walk-forward completes — fixture symbols are IWM, QQQ and SPY.
+  **GLD and SHY are missing**: GLD is unwanted and SHY cannot be bought, so those slots
+  remain in cash under the declared rules.
+- [x] All mandatory checks green; coverage remains 100%, including every existing package
+  and the new strategy.
+- [x] Protected paths and configuration files unchanged — reviewed path list and diff stat.
 
-## Change boundary
+### Diff stat
 
-`git diff --stat` captured before writing this report (Git excludes untracked additions):
+`git diff --stat` for tracked implementation files before writing this report:
 
 ```text
- config/paper.yaml                           | 13 +++++--
- docs/dev/setup.md                           | 30 +++++++++++++++
- pyproject.toml                              |  6 +++
- src/aitrader/backtest/engine.py             | 53 ++++++++++++++++++++++++--
- src/aitrader/cli/main.py                    | 59 +++++++++++++++++++++++++++--
- src/aitrader/config/__init__.py             |  2 +
- src/aitrader/config/loader.py               | 10 ++++-
- src/aitrader/config/settings.py             | 24 ++++++++----
- src/aitrader/storage/database.py            | 19 ++++++++++
- tests/architecture/test_import_contracts.py |  1 +
- tests/contract/test_sandbox_check.py        |  4 +-
- tests/unit/broker/test_webull_tokens.py     |  3 +-
- tests/unit/cli/test_cli.py                  |  3 +-
- tests/unit/config/test_loader.py            | 32 +++++++++++-----
- tests/unit/reconcile/test_reconciler.py     |  2 +-
- 15 files changed, 226 insertions(+), 35 deletions(-)
+ docs/design/11-strategy-and-ai-analysis.md |   9 +++
+ docs/dev/setup.md                          |  19 +++++
+ src/aitrader/app/paper.py                  |   1 +
+ src/aitrader/backtest/engine.py            |  75 ++++++++++----------
+ src/aitrader/backtest/walkforward.py       | 109 +++++++++++++++++++++++++++--
+ src/aitrader/cli/main.py                   |   8 ++-
+ src/aitrader/strategy/__init__.py          |   5 +-
+ tests/integration/test_paper.py            |   1 +
+ tests/integration/test_walkforward.py      |   2 +-
+ 9 files changed, 184 insertions(+), 45 deletions(-)
 ```
 
-New files, in addition to that tracked diff: `app/paper.py` (273 lines),
-`app/paper_reports.py` (121), `backtest/snapshots.py` (65), and
-`tests/integration/test_paper.py` (660). Their full paths are listed above. This report is also
-modified. No design documents or protected source/configuration files were changed.
+Untracked additions are listed explicitly under Files changed: the S3 module and its two
+new test files. This report is also modified. Temporary baseline, timing and CLI artifacts
+were removed after recording the results; they are not deliverables.
 
-## Errors, warnings and GUI verification
+## GUI verification
 
-The initial unconfigured `uv run` could not open the default user cache due to sandbox
-permissions; subsequent commands used the repository-local offline cache and succeeded.
-A local editable-package rebuild emitted a uv/build-backend version warning; it completed
-without downloading dependencies. Initial development-test failures involved the removed
-PAPER field, relocated sandbox mocks and a mistaken test expectation before the market close;
-all were corrected and the final full suite produced no warnings or failures.
-
-GUI: NOT_RUN — this task adds a local CLI and files, with no graphical workflow.
+NOT_RUN: this task changes offline strategy and CLI behavior only. Verification used synthetic
+unit/integration tests and CLI runs. Expected/actual: deterministic strategy decisions and reports,
+unchanged legacy results, and PAPER snapshot parity; all verified as described above.
 
 ## Deviations from the task or the design
 
-None. The runner is under `aitrader.app`, and a new import contract explicitly prohibits
-Webull dependencies. The existing schema steps remain unchanged; PAPER tables are step 3.
+Two minimal existing-test adaptations were necessary: the PAPER replay fixture explicitly
+passes `capture_sessions=True` for the new opt-in API, and the unknown-strategy test uses
+`UNKNOWN` instead of the newly valid `S3`. All existing assertions are retained; no checks were
+weakened. Product behavior and design otherwise follow the task. S2 retains its existing
+`selected_grid_point` null-valued top_n/skip fields to preserve legacy output, while its
+empty declared axes correctly yield no neighbours.
 
 ## Open issues and questions
 
-None requiring designer judgment for TASK-013. Live quotes and actual execution quality remain
-outside the evidence provided by the daily-bar simulator.
-
-## Intentionally not performed
-
-No network, remote fetch, credentials, real market data, scheduler, notifications, cloud
-resources, deployment, LIVE operation or protected-path changes. No Git staging, commits,
-pushes, branch changes or history changes; the operator performs Git work under AGENTS.md.
-No subsequent implementation cycle was started.
+None requiring a design decision. No new dependency, external request, credential access,
+protected-path edit, configuration edit, LIVE enablement, Git commit, push or branch change.
+Real-data research, S3 PAPER adoption and production deployment were intentionally not run.
