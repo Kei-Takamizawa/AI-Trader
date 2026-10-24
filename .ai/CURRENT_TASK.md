@@ -415,3 +415,38 @@ reports "fills exceed the order quantity". New rule:
 - A `CANCELLED` order with zero fills produces no fill.
 
 Acceptance criteria 1–8 still apply. AC 1 covers the new contract property.
+
+## Review round 5 (designer, 2026-10-24) — answer to BLOCKED B4
+
+Codex was right: round 4 asked for fills whose `ts` can be older than entries already in the
+ledger, which `Ledger.apply` rejects, and partial statuses could leave a record in a state the
+manager cannot move back from. Do **not** change the ledger, the manager or `BrokerPort`. The
+fix stays inside `aitrader.broker.webull`. Rules R1–R3 replace the matching parts of round 4 F1;
+the rest of round 4 (terminal-only fills, `:final` ID, 7-day lookback, F2 settlement) stays.
+
+- **R1. Fill time = observation time.** Every `BrokerFill` returned by `fills_since` has
+  `fill.ts = clock.now()` at the start of that `fills_since` call, and its `TradeCost` entries
+  use the same `ts`. Webull's `filled_time_at` (or `place_time_at`) is used **only** to derive
+  the trade date for `settles_on` (F2). Re-delivery of the same order in a later call carries a
+  newer `ts` but the same `fill_id`, and the manager drops it before the ledger (existing
+  `fill:<id>` check). The booked time is at most one sync interval after the real execution.
+  Record this as an assumption in LAST_REPORT; the designer adds it to document 14.
+- **R2. Webull orders show no fills until they are terminal.** In `order_status()` and
+  `open_orders()`, a non-terminal order (`PENDING`, `SUBMITTED`, `PARTIAL_FILLED`) is reported as
+  `OrderStatus.SUBMITTED` with `filled_quantity = 0` and `average_fill_price = None`. Terminal
+  orders report their real `filled_quantity` and price, as now. This keeps `order_status`
+  consistent with `fills_since`. The manager then never sees a partial quantity it cannot book,
+  and an order that turns terminal between the history read and the status read stays
+  `SUBMITTED` (or `CANCEL_PENDING`) until the next sync books the fill. The sandbox report still
+  records the raw Webull status strings.
+- **R3. Contract suite:** the partial-fill case asserts the round 4 property only (the union by
+  `fill_id` equals the final quantity and never exceeds the order quantity). The
+  `PARTIALLY_FILLED` status assertion becomes broker-specific: `SimBroker` reports
+  `PARTIALLY_FILLED` with 0.5; Webull reports `SUBMITTED` with 0.
+- **Integration tests** from round 4 stay. The cursor test must now pass because of R1, with the
+  real `Ledger` and `OrderManager` and no ledger changes. Add one test for the race in R2: status
+  read sees a terminal order whose fill was not in that sync's `fills_since` → no `MISMATCH`, and
+  the next sync books it once and moves the record to its terminal state.
+
+Keep the uncommitted round 4 work in the tree and build on it. Acceptance criteria 1–8 still
+apply.

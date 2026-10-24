@@ -116,6 +116,7 @@ Worked example for a ¥50,000 account (USD/JPY 155 [A]):
 | U14 | **Disclaimer:** Webull disclaims responsibility for losses from automated or AI-driven decisions. | [V] | Owner accepts this in the LIVE approval record. |
 | U15 | **Documentation errors** exist (registration number, inconsistent host names, an example labelled HMAC-SHA1 vs HMAC-SHA256). | [V] | Every behaviour we depend on is verified in the sandbox (section 8) and, where needed, with Webull support. |
 | U16 | **Balance and position semantics:** the balance gives per-currency `cash_balance` and `buying_power` but no settled/unsettled split; position `cost_price` is not stated as per share or total (reference: `docs/reference/webull-trading-api-v3.md`). | [U] | Sandbox adapter assumes settled USD = min(cash, buying power) and per-share `cost_price` (TASK-008); verify with the owner's account before LIVE (WB-9). |
+| U17 | **Order-level fills only:** the API reports cumulative `filled_quantity` and an average `filled_price` per order, not individual executions. | [V] | The adapter reports one fill per order only when the order is terminal, booked at the time it is observed (trade date from `filled_time_at` for settlement); working orders show no fills (TASK-008 round 5). Partial exposure of a working order is invisible until it ends; acceptable for marketable DAY orders, to be reviewed before LIVE together with SB-4 trade events. |
 
 ## 7. How this maps to the three environments
 
