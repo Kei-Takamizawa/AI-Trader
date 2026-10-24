@@ -16,16 +16,19 @@ from itertools import pairwise
 from pathlib import Path
 
 from aitrader.clock import TradingCalendar
+from aitrader.data.adjusted import (
+    RATIO_TOLERANCE as RATIO_TOLERANCE,
+)
+from aitrader.data.adjusted import (
+    SPLIT_THRESHOLD as SPLIT_THRESHOLD,
+)
+from aitrader.data.adjusted import (
+    detect_corporate_actions,
+)
 from aitrader.data.alpaca import AlpacaDataClient, DailyBarRow
 from aitrader.data.bars import DailyBarSource
 
 LARGE_MOVE = Decimal("0.25")
-SPLIT_THRESHOLD = Decimal("0.2")
-"""A change of the raw/adjusted price ratio above 20% is reported as a split, below as a
-distribution (dividend or capital gain)."""
-RATIO_TOLERANCE = Decimal("0.0005")
-"""Changes below 0.05% are rounding of the adjusted prices; real distributions are larger
-(monthly bond-ETF dividends are about 0.3%)."""
 
 
 def write_daily_csv(directory: Path, symbol: str, rows: Sequence[DailyBarRow]) -> Path:
@@ -66,21 +69,12 @@ def corporate_actions(
     raw: Sequence[DailyBarRow], adjusted: Sequence[DailyBarRow]
 ) -> list[tuple[date, str, Decimal]]:
     """Sessions where the raw/adjusted price ratio changes: (session, kind, factor)."""
-    adjusted_by_session = {r.session: r for r in adjusted}
-    events: list[tuple[date, str, Decimal]] = []
-    previous_ratio: Decimal | None = None
-    for row in raw:
-        other = adjusted_by_session.get(row.session)
-        if other is None:
-            continue
-        ratio = row.close / other.close
-        if previous_ratio is not None:
-            factor = ratio / previous_ratio
-            if abs(factor - 1) > RATIO_TOLERANCE:
-                kind = "split" if abs(factor - 1) > SPLIT_THRESHOLD else "distribution"
-                events.append((row.session, kind, factor))
-        previous_ratio = ratio
-    return events
+    return [
+        (event.session, event.kind.value, event.factor)
+        for event in detect_corporate_actions(
+            "", [(r.session, r.close) for r in raw], [(r.session, r.close) for r in adjusted]
+        )
+    ]
 
 
 @dataclass(frozen=True)

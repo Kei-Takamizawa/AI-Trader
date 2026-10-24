@@ -1,5 +1,12 @@
 """Market data: daily-bar sources, the look-ahead guard and the data quality gate."""
 
+from aitrader.data.adjusted import (
+    CorporateAction,
+    CorporateActionError,
+    CorporateActionKind,
+    PointInTimeBars,
+    detect_corporate_actions,
+)
 from aitrader.data.alpaca import (
     AlpacaDataClient,
     DailyBarRow,
@@ -13,6 +20,9 @@ from aitrader.data.quality import DataQualityGate
 
 __all__ = [
     "AlpacaDataClient",
+    "CorporateAction",
+    "CorporateActionError",
+    "CorporateActionKind",
     "DailyBarRow",
     "DailyBarSource",
     "DataAuthError",
@@ -23,7 +33,9 @@ __all__ = [
     "FetchReport",
     "LookAheadError",
     "MarketDataView",
+    "PointInTimeBars",
     "SymbolReport",
+    "detect_corporate_actions",
     "fetch_universe",
     "session_of",
     "write_daily_csv",

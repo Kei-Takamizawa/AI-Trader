@@ -95,7 +95,10 @@ def validate(
 
 @app.command()
 def backtest(
-    data_dir: Annotated[Path, typer.Option(help="Directory with <SYMBOL>.csv daily bars.")],
+    data_dir: Annotated[
+        Path,
+        typer.Option(help="Directory with raw/ and adjusted/, or flat <SYMBOL>.csv daily bars."),
+    ],
     out_dir: Annotated[Path, typer.Option(help="Where to write manifest, metrics and equity.")],
     strategy: Annotated[str, typer.Option(help="Strategy ID.")] = "S2",
     config_dir: Annotated[Path, typer.Option(help="Configuration directory.")] = Path("config"),
@@ -122,16 +125,25 @@ def backtest(
     last = date.fromisoformat(end) if end else period.end
     calendar = TradingCalendar()
     try:
-        source = DailyBarSource(data_dir, calendar)
+        has_raw = (data_dir / "raw").is_dir()
+        has_adjusted = (data_dir / "adjusted").is_dir()
+        if has_raw != has_adjusted:
+            missing = "adjusted/" if has_raw else "raw/"
+            raise DataError(f"missing {missing} in {data_dir}; both series are required")
+        source = DailyBarSource(data_dir / "raw" if has_raw else data_dir, calendar)
+        adjusted = DailyBarSource(data_dir / "adjusted", calendar) if has_adjusted else None
+        chosen = STRATEGIES[strategy]()
+        result = run_backtest(
+            settings, chosen, source, adjusted=adjusted, start=first, end=last, calendar=calendar
+        )
     except DataError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(EXIT_DATA_ERROR) from exc
-    chosen = STRATEGIES[strategy]()
-    result = run_backtest(settings, chosen, source, start=first, end=last, calendar=calendar)
     manifest = build_manifest(
         settings=settings,
         strategy=chosen,
         source=source,
+        adjusted=adjusted,
         start=first,
         end=last,
         git_commit=git_commit,
