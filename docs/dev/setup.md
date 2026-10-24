@@ -219,9 +219,29 @@ equity, returns, drawdown, positions, pending intents and the SPY buy-and-hold c
 Returns and drawdown are fractions (0.01 means 1%). The fixed JPY rate is a reporting assumption.
 A short JSON and Markdown report for each new session appears under `data/paper/reports/daily/`;
 existing reports are never rewritten. Fills are modelled, not actual broker executions.
+Missing daily report files are recreated from verified replay on the next run.
 
 Exit codes: 0 success (also no new sessions), 2 configuration, 4 data error, 5 usage or a held
 lock, 6 replay/book mismatch. **On exit 6, stop and report the status and affected session to
 the designer; never delete the state.** Changing the book's start, strategy parameters,
 simulation assumptions or risk limits requires a new state directory after review. A changed
 historical snapshot halts the book before any new session is recorded.
+
+### S3 declared research families (TASK-014)
+
+S3 1.0.0 holds SPY, QQQ, IWM and GLD above their trend average, with SHY for unwanted
+slots. The declared grid is trend periods (200, 150) × ATR stop multiples (3, 2).
+See the [declared plan](../research/2026-10-24-s3-plan.md). Both families use N = 25
+(`--prior-variants 21` plus four grid points):
+
+```bash
+uv run aitrader walkforward --data-dir data/bars --out-dir results/s3 --strategy S3 --start 2017-01-03 --prior-variants 21
+uv run aitrader walkforward --data-dir data/bars --out-dir results/s3-r1 --strategy S3 --start 2017-01-03 --risk-per-trade-pct 1.0 --prior-variants 21
+```
+
+S3-R1's 1.0% risk override is research only, approved by the owner on 2026-10-24.
+Neither family enables S3 in PAPER. `--cash-proxy` is S1 only.
+Walk-forward reports include each selected point's neighbouring test returns and sign stability,
+plus per-fold and combined costs. Single-point S2 has null stability and zero counted folds.
+Combined costs sum the independent fold books; annual cost percentage uses initial capital
+and test sessions / 252 years. Neighbours never affect selection or chained equity.

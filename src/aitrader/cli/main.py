@@ -199,7 +199,7 @@ def _git_commit(explicit: str | None = None, *, required: bool = True) -> str:
 def walkforward(
     data_dir: Annotated[Path, typer.Option(help="Raw/adjusted directories or flat CSV bars.")],
     out_dir: Annotated[Path, typer.Option(help="Walk-forward output directory.")],
-    strategy: Annotated[str, typer.Option(help="Strategy ID: S1 or S2.")] = "S1",
+    strategy: Annotated[str, typer.Option(help="Strategy ID: S1, S2 or S3.")] = "S1",
     config_dir: Annotated[Path, typer.Option(help="Configuration directory.")] = Path("config"),
     start: Annotated[str, typer.Option(help="First training session.")] = "2017-01-03",
     train_months: Annotated[int, typer.Option()] = 36,
@@ -213,8 +213,10 @@ def walkforward(
     prior_variants: Annotated[int, typer.Option(help="Variants tried before this grid.")] = 0,
 ) -> None:
     """Select on training windows and evaluate subsequent tests, leaving hold-out locked."""
-    if strategy not in ("S1", "S2"):
-        typer.echo(f"error: unknown strategy {strategy!r}; known: S1, S2", err=True)
+    if strategy not in STRATEGIES:
+        typer.echo(
+            f"error: unknown strategy {strategy!r}; known: {', '.join(STRATEGIES)}", err=True
+        )
         raise typer.Exit(EXIT_USAGE_ERROR)
     try:
         settings = load_settings(Mode.BACKTEST, config_dir)

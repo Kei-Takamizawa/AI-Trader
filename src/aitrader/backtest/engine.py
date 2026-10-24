@@ -104,6 +104,7 @@ def run_backtest(
     calendar: TradingCalendar | None = None,
     point_in_time: PointInTimeBars | None = None,
     simulation: SimulationSettings | None = None,
+    capture_sessions: bool = False,
 ) -> BacktestResult:
     """Replay raw executions; dividend cash settles on ex-date rather than actual pay date."""
     pit = point_in_time or PointInTimeBars(source, adjusted)
@@ -288,41 +289,43 @@ def run_backtest(
             equity_usd=equity,
         )
         pending = strategy.evaluate(context)
-        result.sessions.append(
-            SessionSnapshot(
-                session=session,
-                equity_usd=equity,
-                cash_usd_settled=ledger.cash_usd_settled,
-                cash_usd_unsettled=ledger.cash_usd_unsettled,
-                positions=tuple(
-                    PositionSnapshot(
-                        symbol=symbol,
-                        quantity=pos.quantity,
-                        average_cost=pos.average_cost,
-                        close=last_close[symbol],
-                        market_value_usd=pos.quantity * last_close[symbol],
-                    )
-                    for symbol, pos in sorted(ledger.positions.items())
-                ),
-                fills=tuple(
-                    SessionFill(
-                        fill=entry.fill, fees_usd=entry.total(Account.TRADING_FEES, Currency.USD)
-                    )
-                    for entry in ledger.entries
-                    if entry.ts.date() == session and entry.fill is not None
-                ),
-                next_intents=tuple(pending),
-                rejections=tuple(
-                    decision
-                    for decision in cycle.decisions[decisions_before:]
-                    if decision.verdict is Verdict.REJECT
-                ),
-                skipped=tuple(item.reason for item in cycle.skipped[skipped_before:]),
-                data_quality={
-                    symbol: tuple(sorted(findings))
-                    for symbol, history in histories.items()
-                    if (findings := DataQualityGate(calendar).findings(history, session))
-                },
+        if capture_sessions:
+            result.sessions.append(
+                SessionSnapshot(
+                    session=session,
+                    equity_usd=equity,
+                    cash_usd_settled=ledger.cash_usd_settled,
+                    cash_usd_unsettled=ledger.cash_usd_unsettled,
+                    positions=tuple(
+                        PositionSnapshot(
+                            symbol=symbol,
+                            quantity=pos.quantity,
+                            average_cost=pos.average_cost,
+                            close=last_close[symbol],
+                            market_value_usd=pos.quantity * last_close[symbol],
+                        )
+                        for symbol, pos in sorted(ledger.positions.items())
+                    ),
+                    fills=tuple(
+                        SessionFill(
+                            fill=entry.fill,
+                            fees_usd=entry.total(Account.TRADING_FEES, Currency.USD),
+                        )
+                        for entry in ledger.entries
+                        if entry.ts.date() == session and entry.fill is not None
+                    ),
+                    next_intents=tuple(pending),
+                    rejections=tuple(
+                        decision
+                        for decision in cycle.decisions[decisions_before:]
+                        if decision.verdict is Verdict.REJECT
+                    ),
+                    skipped=tuple(item.reason for item in cycle.skipped[skipped_before:]),
+                    data_quality={
+                        symbol: tuple(sorted(findings))
+                        for symbol, history in histories.items()
+                        if (findings := DataQualityGate(calendar).findings(history, session))
+                    },
+                )
             )
-        )
     return result

@@ -66,6 +66,7 @@ def replay(source: DailyBarSource) -> BacktestResult:
         start=START,
         end=END,
         simulation=PaperSettings(start=START).simulation(),
+        capture_sessions=True,
     )
 
 
@@ -171,6 +172,78 @@ def test_idempotence_and_catchup_then_older_through(tmp_path: Path, source: Dail
     assert older.status.last_session == END
     assert rows(tmp_path) == all_rows
     assert reports(tmp_path) == all_files
+
+
+@pytest.mark.parametrize("through", [FIRST_END, END])
+def test_missing_daily_reports_recovered_without_inserts(
+    tmp_path: Path, source: DailyBarSource, through: date
+) -> None:
+    assert run(tmp_path, source).exit_code == 0
+    before, files = rows(tmp_path), reports(tmp_path)
+    missing = {f"{START}.json", f"{FIRST_END}.md", f"{END}.json"}
+    for name in missing:
+        (tmp_path / "reports/daily" / name).unlink()
+
+    result = run(tmp_path, source, through)
+    assert result.exit_code == 0
+    assert result.status.state == "RUNNING"
+    assert result.sessions_added == 0
+    assert rows(tmp_path) == before
+    actual = reports(tmp_path)
+    for name, original in files.items():
+        if name in missing:
+            if date.fromisoformat(Path(name).stem) <= through:
+                assert actual[name][0] == original[0]
+            else:
+                assert name not in actual
+        else:
+            assert actual[name] == original
+
+
+@pytest.mark.parametrize("suffix", [".json", ".md"])
+def test_report_failure_after_commit_halts_and_next_cli_run_recovers(
+    tmp_path: Path, source: DailyBarSource, monkeypatch: pytest.MonkeyPatch, suffix: str
+) -> None:
+    cfg, state = make_config(tmp_path), tmp_path / "state"
+    reference = tmp_path / "reference"
+    assert run(reference, source).exit_code == 0
+    expected = reports(reference)
+    assert cli(cfg, state, "--through", FIRST_END.isoformat()).exit_code == 0
+    preserved = reports(state)
+    failed_session = CAL.next_session(FIRST_END)
+    failed_path = state / f"reports/daily/{failed_session}{suffix}"
+
+    def fail_report(path: Path, content: str) -> None:
+        if path == failed_path:
+            raise OSError("simulated daily report failure")
+        atomic_write(path, content)
+
+    with monkeypatch.context() as patch:
+        patch.setattr("aitrader.app.paper_reports.atomic_write", fail_report)
+        failed = cli(cfg, state, "--through", END.isoformat())
+    assert failed.exit_code == 4
+    assert "HALTED" in failed.output
+    status = json.loads((state / "status/latest.json").read_text())
+    assert status["state"] == "HALTED"
+    assert status["reason"] == f"daily report {failed_session}: simulated daily report failure"
+    committed = rows(state)
+    assert len(committed) == len(CAL.sessions(START, END))
+    assert not failed_path.exists()
+    before_recovery = reports(state)
+    assert all(before_recovery[name] == value for name, value in preserved.items())
+    assert (f"{failed_session}.json" in before_recovery) == (suffix == ".md")
+
+    recovered = cli(cfg, state, "--through", END.isoformat())
+    assert recovered.exit_code == 0
+    assert "RUNNING" in recovered.output
+    assert "sessions_added=0" in recovered.output
+    assert rows(state) == committed
+    actual = reports(state)
+    assert {name: value[0] for name, value in actual.items()} == {
+        name: value[0] for name, value in expected.items()
+    }
+    assert all(actual[name] == value for name, value in before_recovery.items())
+    assert json.loads((state / "status/latest.json").read_text())["state"] == "RUNNING"
 
 
 @pytest.mark.parametrize("tamper", ["hash", "equity", "json", "array", "rehashed"])

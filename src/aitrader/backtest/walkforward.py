@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
+from itertools import product
 from pathlib import Path
 from typing import cast
 
@@ -34,10 +35,17 @@ from aitrader.strategy import (
     MomentumStrategy,
     PullbackStrategy,
     Strategy,
+    TrendCoreParams,
+    TrendCoreStrategy,
     params_hash,
 )
 
-S1_GRID = ((3, 0), (3, 5), (2, 0), (2, 5))
+GRID_AXES: dict[str, dict[str, tuple[int, ...]]] = {
+    "S1": {"top_n": (3, 2), "skip": (0, 5)},
+    "S2": {},
+    "S3": {"trend_period": (200, 150), "atr_stop_multiple": (3, 2)},
+}
+S1_GRID = tuple(product(*GRID_AXES["S1"].values()))
 
 
 def variants(strategy_id: str, cash_proxy: str | None = None) -> tuple[Strategy, ...]:
@@ -48,9 +56,67 @@ def variants(strategy_id: str, cash_proxy: str | None = None) -> tuple[Strategy,
             MomentumStrategy(MomentumParams(top_n=n, skip=k, cash_proxy=cash_proxy))
             for n, k in S1_GRID
         )
+    if strategy_id == "S3":
+        return tuple(
+            TrendCoreStrategy(TrendCoreParams(trend_period=period, atr_stop_multiple=Decimal(stop)))
+            for period, stop in product(*GRID_AXES["S3"].values())
+        )
     if strategy_id == "S2":
         return (PullbackStrategy(),)
     raise DataError(f"unknown walk-forward strategy {strategy_id!r}")
+
+
+def neighbours(grid: Sequence[Strategy], selected: int, strategy_id: str) -> list[Strategy]:
+    """Use declared axis positions, preserving grid order for reporting."""
+    axes = GRID_AXES[strategy_id]
+    origin = grid[selected].params()
+    adjacent = []
+    for candidate in grid:
+        values = candidate.params()
+        changed = [key for key in axes if values.get(key) != origin.get(key)]
+        if len(changed) == 1:
+            key = changed[0]
+            positions = [str(value) for value in axes[key]]
+            if abs(positions.index(values[key]) - positions.index(origin[key])) == 1:
+                adjacent.append(candidate)
+    return adjacent
+
+
+def same_sign(left: Decimal, right: Decimal) -> bool:
+    return (left > 0) - (left < 0) == (right > 0) - (right < 0)
+
+
+def combined_costs(
+    results: Sequence[BacktestResult], settings: Settings, source: DailyBarSource
+) -> dict[str, object]:
+    """Sum independent fold books before computing ratios; do not scale costs by chaining."""
+    bt = settings.require_backtest()
+    fees: dict[str, Decimal] = {}
+    spread = Decimal(0)
+    gross = Decimal(0)
+    sessions = 0
+    for result in results:
+        prices = {
+            symbol: [
+                bar for bar in source.bars(symbol) if bar.ts.date() <= result.points[-1].session
+            ][-1].close
+            for symbol in result.ledger.positions
+        }
+        pnl = result.ledger.trading_pnl(prices, bt.fx_jpy_per_usd)
+        for kind, amount in pnl.fees_by_type_usd.items():
+            fees[kind] = fees.get(kind, Decimal(0)) + amount
+        spread += result.spread_and_slippage_usd
+        gross += pnl.trading_pnl_usd + pnl.fees_usd + result.spread_and_slippage_usd
+        sessions += len(result.points)
+    total = sum(fees.values(), Decimal(0)) + spread
+    return {
+        "fees_usd": {key: fmt(value, 8) for key, value in sorted(fees.items())},
+        "spread_and_slippage_usd": fmt(spread, 8),
+        "fx_usd": fmt(Decimal(0), 8),
+        "total_usd": fmt(total, 8),
+        "share_of_gross_pnl_pct": fmt(total / gross * 100, 4) if gross > 0 else None,
+        "annual_pct_of_start_equity": fmt(total / bt.initial_capital_usd * 252 / sessions * 100, 4),
+    }
 
 
 def validate_research_options(
@@ -217,14 +283,40 @@ def run_walkforward(
         result = run(grid[selected], fold.test_start, fold.end)
         tests.append(result)
         test_metrics = metrics_for(result, source, settings)
+        neighbour_reports = []
+        selected_total = Decimal(str(section(test_metrics, "returns")["total_pct"]))
+        for neighbour in neighbours(grid, selected, strategy_id):
+            neighbour_metrics = metrics_for(
+                run(neighbour, fold.test_start, fold.end), source, settings
+            )
+            neighbour_reports.append(
+                {
+                    "params": dict(neighbour.params()),
+                    "params_hash": params_hash(neighbour),
+                    "total_pct": section(neighbour_metrics, "returns")["total_pct"],
+                }
+            )
+        stable = (
+            all(
+                same_sign(selected_total, Decimal(str(item["total_pct"])))
+                for item in neighbour_reports
+            )
+            if neighbour_reports
+            else None
+        )
         fold_summary.append(
             {
                 "test": fold.periods()["test"],
+                "stable": stable,
+                "cost_share_of_gross_pnl_pct": section(test_metrics, "costs")[
+                    "share_of_gross_pnl_pct"
+                ],
                 "total_pct": section(test_metrics, "returns")["total_pct"],
                 "profit_factor": section(test_metrics, "trades")["profit_factor"],
                 "exposure_pct": section(test_metrics, "activity")["exposure_pct"],
                 "selected_grid_point": {
-                    key: grid[selected].params().get(key) for key in ("top_n", "skip")
+                    key: grid[selected].params().get(key)
+                    for key in (GRID_AXES[strategy_id] or ("top_n", "skip"))
                 },
             }
         )
@@ -240,8 +332,10 @@ def run_walkforward(
                     for v, m in zip(grid, training, strict=True)
                 ],
                 "selected_variant": params_hash(grid[selected]),
+                "neighbours": neighbour_reports,
+                "stable": stable,
                 "test_metrics": {
-                    k: test_metrics[k] for k in ("returns", "risk", "trades", "activity")
+                    k: test_metrics[k] for k in ("returns", "risk", "trades", "activity", "costs")
                 },
             }
         )
@@ -306,10 +400,17 @@ def run_walkforward(
             "holdout_used": False,
         }
     )
+    combined["costs"] = combined_costs(tests, settings, source)
+    combined["stability"] = {
+        "stable_folds": sum(fold["stable"] is True for fold in reports),
+        "folds": sum(fold["stable"] is not None for fold in reports),
+    }
     return manifest, {
         "folds": reports,
         "fold_summary": fold_summary,
-        "combined": {k: combined[k] for k in ("returns", "risk", "benchmarks")},
+        "combined": {
+            k: combined[k] for k in ("returns", "risk", "benchmarks", "costs", "stability")
+        },
         "equity": [
             {"session": p.session.isoformat(), "equity_usd": str(p.equity_usd)} for p in points
         ],
