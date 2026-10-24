@@ -41,6 +41,21 @@ byte-identical files. The bars in `tests/fixtures/bars/` are **synthetic** (seed
 `scripts/make_synthetic_bars.py`); they only exercise the code and say nothing about any
 strategy. Exit codes: 2 configuration error, 4 data error, 5 unknown strategy.
 
+### Market data (Alpaca, read-only)
+
+```bash
+uv run aitrader data fetch --end 2024-12-31          # universe from config/universe.yaml
+uv run aitrader backtest --data-dir data/bars/adjusted --out-dir results/s2 \
+  --start 2016-01-04 --end 2024-12-31
+```
+
+`data fetch` needs `AITRADER_DATA_API_KEY` and `AITRADER_DATA_API_SECRET` in the environment
+(in a cloud session: the environment's secrets settings; never in a file). It only sends GET
+requests to `data.alpaca.markets`. It writes `data/bars/raw/` (traded prices),
+`data/bars/adjusted/` (adjusted for splits and distributions) and `data/bars/fetch_report.json`
+(rows, missing sessions, large moves, corporate actions, snapshot hashes). `data/` is never
+committed. Exit codes: 2 missing key or invalid universe, 4 data source error (401, 403 = DATA-3).
+
 `config validate` prints the mode, the broker environment and the configuration hash; an invalid
 configuration exits with code 2 and names the offending field.
 

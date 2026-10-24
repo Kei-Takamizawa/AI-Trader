@@ -1,5 +1,6 @@
 """``aitrader`` command-line interface."""
 
+import os
 from datetime import date
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
@@ -10,8 +11,22 @@ import typer
 
 from aitrader.backtest import build_manifest, metrics_for, run_backtest, write_results
 from aitrader.clock import TradingCalendar
-from aitrader.config import ConfigError, LiveDisabledError, config_hash, load_settings
-from aitrader.data import DailyBarSource, DataError
+from aitrader.config import (
+    ConfigError,
+    LiveDisabledError,
+    Secrets,
+    assert_no_live_credentials,
+    config_hash,
+    load_settings,
+    load_universe,
+)
+from aitrader.data import (
+    AlpacaDataClient,
+    DailyBarSource,
+    DataError,
+    DataSourceError,
+    fetch_universe,
+)
 from aitrader.domain import Mode
 from aitrader.strategy import STRATEGIES
 
@@ -28,6 +43,8 @@ app = typer.Typer(
 )
 config_app = typer.Typer(help="Configuration commands.", no_args_is_help=True)
 app.add_typer(config_app, name="config")
+data_app = typer.Typer(help="Market data commands (read-only).", no_args_is_help=True)
+app.add_typer(data_app, name="data")
 
 
 def _version() -> str:
@@ -123,6 +140,48 @@ def backtest(
     write_results(out_dir, manifest, metrics_for(result, source, settings), result)
     typer.echo(f"run_id: {manifest['run_id']}")
     typer.echo(f"results: {out_dir}")
+
+
+@data_app.command("fetch")
+def data_fetch(
+    end: Annotated[str, typer.Option(help="Last session (YYYY-MM-DD); fixed for reproducibility.")],
+    out_dir: Annotated[Path, typer.Option(help="Where raw/ and adjusted/ are written.")] = Path(
+        "data/bars"
+    ),
+    universe: Annotated[Path, typer.Option(help="Universe file.")] = Path("config/universe.yaml"),
+    start: Annotated[str, typer.Option(help="First session (YYYY-MM-DD).")] = "2016-01-04",
+) -> None:
+    """Download daily bars for the universe from Alpaca (read-only) and check them."""
+    try:
+        assert_no_live_credentials(os.environ, Mode.PAPER)
+        symbols = load_universe(universe).symbols
+    except ConfigError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(EXIT_CONFIG_ERROR) from exc
+    secrets = Secrets()
+    if secrets.data_api_key is None or secrets.data_api_secret is None:
+        typer.echo(
+            "error: set AITRADER_DATA_API_KEY and AITRADER_DATA_API_SECRET "
+            "(environment secrets; never in files)",
+            err=True,
+        )
+        raise typer.Exit(EXIT_CONFIG_ERROR)
+    calendar = TradingCalendar()
+    try:
+        client = AlpacaDataClient(secrets.data_api_key, secrets.data_api_secret)
+        report = fetch_universe(
+            client, symbols, date.fromisoformat(start), date.fromisoformat(end), out_dir, calendar
+        )
+    except DataSourceError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(EXIT_DATA_ERROR) from exc
+    for symbol, info in report.symbols.items():
+        typer.echo(
+            f"{symbol}: {info.rows_raw} sessions {info.first} .. {info.last}; "
+            f"missing {len(info.missing_sessions)}, large moves {len(info.large_moves)}, "
+            f"corporate actions {len(info.corporate_actions)}"
+        )
+    typer.echo(f"snapshot hashes: {report.snapshot_hashes}")
 
 
 @app.command()
