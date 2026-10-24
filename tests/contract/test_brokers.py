@@ -84,7 +84,14 @@ def harness(request: pytest.FixtureRequest) -> Harness:
     fake = FakeTransport(clock)
     fake.fractional_accept = True
     return Harness(
-        WebullBroker(clock, credentials=SandboxCredentials(ENV), transport=fake), clock, fake
+        WebullBroker(
+            clock,
+            settlement_date=lambda day: day + timedelta(days=1),
+            credentials=SandboxCredentials(ENV),
+            transport=fake,
+        ),
+        clock,
+        fake,
     )
 
 
@@ -107,17 +114,27 @@ def test_partial_and_final_fills(harness: Harness) -> None:
     harness.broker.submit(order("order-1", quantity="1", limit="100"))
     harness.fill(False)
     partial = harness.broker.order_status("order-1")
-    assert partial.status is OrderStatus.PARTIALLY_FILLED
-    assert partial.filled_quantity == Decimal("0.5")
+    if harness.fake is None:
+        assert partial.status is OrderStatus.PARTIALLY_FILLED
+        assert partial.filled_quantity == Decimal("0.5")
+    else:
+        assert partial.status is OrderStatus.SUBMITTED
+        assert partial.filled_quantity == 0
+        assert partial.average_fill_price is None
     first = harness.broker.fills_since(NOW)
-    assert first[0].fill.quantity == Decimal("0.5")
+    seen = {item.fill.fill_id: item.fill for item in first}
+    assert sum((fill.quantity for fill in seen.values()), Decimal(0)) <= Decimal("0.5")
     harness.clock.advance(timedelta(seconds=2))
     harness.fill(True)
     final = harness.broker.order_status("order-1")
     assert final.status is OrderStatus.FILLED
     assert final.filled_quantity == 1
     assert final.average_fill_price is not None
-    assert harness.broker.fills_since(NOW)
+    for _ in range(2):
+        harness.clock.advance(timedelta(seconds=2))
+        seen.update({item.fill.fill_id: item.fill for item in harness.broker.fills_since(NOW)})
+        assert sum((fill.quantity for fill in seen.values()), Decimal(0)) == final.filled_quantity
+        assert final.filled_quantity <= final.quantity
 
 
 @pytest.mark.parametrize("known", [True, False])
@@ -191,6 +208,14 @@ def test_production_host_refused(harness: Harness) -> None:
     if isinstance(harness.broker, SimBroker):
         assert harness.broker.environment is BrokerEnvironment.SIM
     with pytest.raises(ConfigError):
-        WebullBroker(harness.clock, settings=WebullSandboxSettings(endpoint="api.webull.co.jp"))
+        WebullBroker(
+            harness.clock,
+            settlement_date=lambda day: day + timedelta(days=1),
+            settings=WebullSandboxSettings(endpoint="api.webull.co.jp"),
+        )
     with pytest.raises(LiveDisabledError):
-        WebullBroker(harness.clock, environment=BrokerEnvironment.WEBULL_LIVE)
+        WebullBroker(
+            harness.clock,
+            settlement_date=lambda day: day + timedelta(days=1),
+            environment=BrokerEnvironment.WEBULL_LIVE,
+        )

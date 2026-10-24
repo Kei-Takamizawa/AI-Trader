@@ -2,6 +2,7 @@
 
 import json
 import logging
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -21,7 +22,12 @@ from tests.unit.broker.test_sim_broker import order
 def setup_check() -> tuple[SandboxCheck, FakeTransport]:
     clock = SimClock(NOW)
     fake = FakeTransport(clock)
-    broker = WebullBroker(clock, credentials=SandboxCredentials(ENV), transport=fake)
+    broker = WebullBroker(
+        clock,
+        settlement_date=lambda day: day + timedelta(days=1),
+        credentials=SandboxCredentials(ENV),
+        transport=fake,
+    )
     check = SandboxCheck(broker, clock, wait=lambda seconds: None)
     broker.set_observer(check.observe)
     return check, fake

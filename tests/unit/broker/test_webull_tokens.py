@@ -103,7 +103,11 @@ def http(monkeypatch: pytest.MonkeyPatch) -> InitializerHTTP:
 
 
 def broker_for(http: InitializerHTTP) -> WebullBroker:
-    return WebullBroker(http.clock, credentials=SandboxCredentials(ENV))
+    return WebullBroker(
+        http.clock,
+        settlement_date=lambda day: day + timedelta(days=1),
+        credentials=SandboxCredentials(ENV),
+    )
 
 
 @pytest.mark.parametrize("enabled", [True, False])

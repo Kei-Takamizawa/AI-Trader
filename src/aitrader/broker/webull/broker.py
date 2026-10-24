@@ -4,7 +4,7 @@ import calendar
 import re
 from collections import defaultdict, deque
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from time import sleep
 from typing import Any
@@ -77,6 +77,7 @@ class WebullBroker:
         self,
         clock: Clock,
         *,
+        settlement_date: Callable[[date], date],
         environment: BrokerEnvironment = BrokerEnvironment.WEBULL_SANDBOX,
         settings: WebullSandboxSettings | None = None,
         credentials: SandboxCredentials | None = None,
@@ -92,6 +93,7 @@ class WebullBroker:
         self._credentials = credentials or SandboxCredentials()
         self._transport = transport or SDKTransport(self._credentials, self.host, clock)
         self._clock = clock
+        self._settlement_date = settlement_date
         self._limiter = QueryLimiter(clock)
         self._observe = observe
         self._wait = wait
@@ -335,13 +337,18 @@ class WebullBroker:
         )
         if ts < earliest:
             raise ValueError("order history reaches back at most 6 months")
+        # Revisit terminal orders whose last execution predates the manager cursor.
+        start = max(ts - timedelta(days=7), earliest)
         result = {}
         for item in self._orders(
-            "history", start_time=ts.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+            "history", start_time=start.isoformat(timespec="milliseconds").replace("+00:00", "Z")
         ):
             snapshot = parsing.order(self._safe(item))
-            if snapshot.filled_quantity > 0 and snapshot.updated_at >= ts:
-                execution = parsing.fill(item, snapshot)
+            if (
+                snapshot.status in {OrderStatus.FILLED, OrderStatus.CANCELLED, OrderStatus.REJECTED}
+                and snapshot.filled_quantity > 0
+            ):
+                execution = parsing.fill(item, snapshot, self._settlement_date, now)
                 result[execution.fill.fill_id] = execution
         return list(result.values())
 

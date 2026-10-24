@@ -304,7 +304,12 @@ def sandbox_check(
         credentials = SandboxCredentials()
         settings = load_webull_sandbox_settings(config_dir)
         clock = WallClock()
-        broker = WebullBroker(clock, credentials=credentials, settings=settings)
+        broker = WebullBroker(
+            clock,
+            settlement_date=TradingCalendar().settlement_date,
+            credentials=credentials,
+            settings=settings,
+        )
     except TokenInitializationError as exc:
         path, exit_code = write_auth_failure(out_dir, clock, settings.endpoint.lower(), exc)
         typer.echo(f"sandbox report: {path}")

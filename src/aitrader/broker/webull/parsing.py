@@ -1,9 +1,11 @@
 """Strict response parsing avoids inventing cash or execution data on malformed input."""
 
 import logging
-from datetime import datetime
+from collections.abc import Callable
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from pydantic import ValidationError
 
@@ -49,7 +51,7 @@ POSITION_FIELDS = (
 STATUSES = {
     "PENDING": OrderStatus.SUBMITTED,
     "SUBMITTED": OrderStatus.SUBMITTED,
-    "PARTIAL_FILLED": OrderStatus.PARTIALLY_FILLED,
+    "PARTIAL_FILLED": OrderStatus.SUBMITTED,
     "FILLED": OrderStatus.FILLED,
     "CANCELLED": OrderStatus.CANCELLED,
     "FAILED": OrderStatus.REJECTED,
@@ -125,7 +127,7 @@ def order(data: dict[str, Any]) -> BrokerOrder:
     filled = number(data, "filled_quantity", optional=True)
     price = number(data, "filled_price", optional=True)
     try:
-        return BrokerOrder(
+        snapshot = BrokerOrder(
             client_order_id=text(data, "client_order_id"),
             broker_order_id=text(data, "order_id"),
             symbol=text(data, "symbol"),
@@ -142,6 +144,12 @@ def order(data: dict[str, Any]) -> BrokerOrder:
         )
     except ValidationError as exc:
         raise BrokerUnavailableError(str(exc.errors()[0]["loc"][0])) from None
+    # A working cumulative execution cannot be booked until its final snapshot arrives.
+    if status in {"PENDING", "SUBMITTED", "PARTIAL_FILLED"}:
+        return snapshot.model_copy(
+            update={"filled_quantity": Decimal(0), "average_fill_price": None}
+        )
+    return snapshot
 
 
 def positions(body: Any) -> list[BrokerPosition]:
@@ -179,7 +187,13 @@ def positions(body: Any) -> list[BrokerPosition]:
     return result
 
 
-def fill(data: dict[str, Any], snapshot: BrokerOrder) -> BrokerFill:
+def fill(
+    data: dict[str, Any],
+    snapshot: BrokerOrder,
+    settlement_date: Callable[[date], date],
+    observed_at: datetime,
+) -> BrokerFill:
+    """Book at observation time; preserve the execution's New York date for settlement."""
     price = snapshot.average_fill_price
     if price is None:
         raise BrokerUnavailableError("filled_price")
@@ -206,7 +220,7 @@ def fill(data: dict[str, Any], snapshot: BrokerOrder) -> BrokerFill:
         try:
             costs.append(
                 TradeCost(
-                    ts=snapshot.updated_at,
+                    ts=observed_at,
                     type=kind,
                     amount=Money.of(number(entry, "actual_value"), Currency.USD),
                     client_order_id=snapshot.client_order_id,
@@ -216,17 +230,21 @@ def fill(data: dict[str, Any], snapshot: BrokerOrder) -> BrokerFill:
             )
         except ValidationError:
             raise BrokerUnavailableError("actual_value") from None
-    filled_quantity = format(snapshot.filled_quantity.normalize(), "f")
     return BrokerFill(
         fill=Fill(
-            fill_id=f"{snapshot.client_order_id}:{filled_quantity}",
+            fill_id=f"{snapshot.client_order_id}:final",
             client_order_id=snapshot.client_order_id,
             symbol=snapshot.symbol,
             side=snapshot.side,
             quantity=snapshot.filled_quantity,
             price=price,
-            ts=snapshot.updated_at,
+            ts=observed_at,
             source="order-detail",
         ),
         costs=tuple(costs),
+        settles_on=(
+            settlement_date(snapshot.updated_at.astimezone(ZoneInfo("America/New_York")).date())
+            if snapshot.side is Side.SELL
+            else None
+        ),
     )

@@ -45,7 +45,12 @@ from tests.unit.broker.test_sim_broker import order
 def setup() -> tuple[WebullBroker, FakeTransport]:
     clock = SimClock(NOW)
     fake = FakeTransport(clock)
-    return WebullBroker(clock, credentials=SandboxCredentials(ENV), transport=fake), fake
+    return WebullBroker(
+        clock,
+        settlement_date=lambda day: day + timedelta(days=1),
+        credentials=SandboxCredentials(ENV),
+        transport=fake,
+    ), fake
 
 
 @pytest.mark.parametrize(
@@ -72,13 +77,21 @@ def test_host_rejected_before_client_build(host: str, monkeypatch: pytest.Monkey
 
     monkeypatch.setattr(sdk, "ApiClient", forbidden)
     with pytest.raises(ConfigError, match="bare UAT"):
-        WebullBroker(SimClock(NOW), settings=WebullSandboxSettings(endpoint=host))
+        WebullBroker(
+            SimClock(NOW),
+            settlement_date=lambda day: day + timedelta(days=1),
+            settings=WebullSandboxSettings(endpoint=host),
+        )
 
 
 @pytest.mark.parametrize("environment", [BrokerEnvironment.SIM, BrokerEnvironment.WEBULL_LIVE])
 def test_non_sandbox_refused(environment: BrokerEnvironment) -> None:
     with pytest.raises(LiveDisabledError):
-        WebullBroker(SimClock(NOW), environment=environment)
+        WebullBroker(
+            SimClock(NOW),
+            settlement_date=lambda day: day + timedelta(days=1),
+            environment=environment,
+        )
 
 
 def test_all_sdk_production_hosts_refused() -> None:
@@ -103,7 +116,11 @@ def test_all_sdk_production_hosts_refused() -> None:
     assert hosts
     for host in hosts:
         with pytest.raises(ConfigError):
-            WebullBroker(SimClock(NOW), settings=WebullSandboxSettings(endpoint=host))
+            WebullBroker(
+                SimClock(NOW),
+                settlement_date=lambda day: day + timedelta(days=1),
+                settings=WebullSandboxSettings(endpoint=host),
+            )
 
 
 def test_sdk_resolved_production_host_refused_without_transport(
@@ -153,7 +170,11 @@ def test_real_sdk_http_path_logging_errors_and_single_timeout(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     caplog.set_level(logging.DEBUG)
-    broker = WebullBroker(SimClock(NOW), credentials=SandboxCredentials(ENV))
+    broker = WebullBroker(
+        SimClock(NOW),
+        settlement_date=lambda day: day + timedelta(days=1),
+        credentials=SandboxCredentials(ENV),
+    )
     assert isinstance(broker._transport, sdk.SDKTransport)
     client = broker._transport._client
     calls = []
@@ -297,8 +318,9 @@ def test_status_mapping(status: str, caplog: pytest.LogCaptureFixture) -> None:
         )
     )
     assert snapshot.status is parsing.STATUSES.get(status, OrderStatus.UNKNOWN)
-    assert snapshot.filled_quantity == Decimal("0.5")
-    assert snapshot.average_fill_price == 99
+    working = status in {"PENDING", "SUBMITTED", "PARTIAL_FILLED"}
+    assert snapshot.filled_quantity == (Decimal(0) if working else Decimal("0.5"))
+    assert snapshot.average_fill_price == (None if working else Decimal(99))
     assert snapshot.updated_at.second == 1
     if status == "NEW_STATUS":
         assert "NEW_STATUS" in caplog.text
@@ -381,18 +403,18 @@ def test_all_costs_and_missing_actuals() -> None:
             {"type": "SEC_FEE", "receivable_value": "0.03"},
         ],
     )
-    execution = parsing.fill(data, parsing.order(data))
+    execution = parsing.fill(data, parsing.order(data), lambda day: day, NOW)
     assert [cost.type.value for cost in execution.costs] == ["CAT_FEE", "OTHER", "COMMISSION"]
-    assert execution.fill.fill_id == "order-1:1"
+    assert execution.fill.fill_id == "order-1:final"
     assert all(not cost.estimated for cost in execution.costs)
     data["commission"] = {"receivable_commission": "1"}
     data["fees"] = []
-    assert parsing.fill(data, parsing.order(data)).costs == ()
+    assert parsing.fill(data, parsing.order(data), lambda day: day, NOW).costs == ()
     with pytest.raises(BrokerUnavailableError, match="filled_price"):
-        parsing.fill({}, parsing.order(order_item()))
+        parsing.fill({}, parsing.order(order_item()), lambda day: day, NOW)
     data["fees"] = [{"type": "CAT_FEE", "actual_value": "-1"}]
     with pytest.raises(BrokerUnavailableError, match="actual_value"):
-        parsing.fill(data, parsing.order(data))
+        parsing.fill(data, parsing.order(data), lambda day: day, NOW)
 
 
 def test_pagination_and_fill_deduplication() -> None:
@@ -405,9 +427,11 @@ def test_pagination_and_fill_deduplication() -> None:
     fills = broker.fills_since(NOW)
     assert len(fills) == 1
     fake.queue("history", {"data": [{"orders": [filled]}]})
-    assert fills == broker.fills_since(NOW)
+    redelivered = broker.fills_since(NOW)
+    assert redelivered[0].fill.ts > fills[0].fill.ts
+    assert redelivered[0].fill.model_copy(update={"ts": fills[0].fill.ts}) == fills[0].fill
     history_params = [params for op, params in fake.calls if op == "history"]
-    assert history_params[0]["start_time"] == "2026-10-24T12:00:00.000Z"
+    assert history_params[0]["start_time"] == "2026-10-17T12:00:00.000Z"
     assert history_params[1]["pagination_key"] == "page-2"
 
 
@@ -511,7 +535,11 @@ def test_request_fields_and_id_validation() -> None:
 def test_configuration_and_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     for name, value in ENV.items():
         monkeypatch.setenv(name, value)
-    broker = WebullBroker(SimClock(NOW), transport=FakeTransport(SimClock(NOW)))
+    broker = WebullBroker(
+        SimClock(NOW),
+        settlement_date=lambda day: day + timedelta(days=1),
+        transport=FakeTransport(SimClock(NOW)),
+    )
     assert broker.environment is BrokerEnvironment.WEBULL_SANDBOX
     (tmp_path / "base.yaml").write_text(
         "webull_sandbox:\n  far_limit_price: 0.50\n  account_tax_type: GENERAL\n"
@@ -546,7 +574,13 @@ def test_paging_paces_queries_without_repeating_transport() -> None:
         waits.append(seconds)
         clock.advance(timedelta(seconds=seconds))
 
-    broker = WebullBroker(clock, credentials=SandboxCredentials(ENV), transport=fake, wait=wait)
+    broker = WebullBroker(
+        clock,
+        settlement_date=lambda day: day + timedelta(days=1),
+        credentials=SandboxCredentials(ENV),
+        transport=fake,
+        wait=wait,
+    )
     for key in ["page-2", "page-3", "page-4", None]:
         fake.queue("open", {"data": [], "pagination_key": key})
     assert broker.open_orders() == []
@@ -589,8 +623,8 @@ def test_recursive_sanitisation_and_optional_fees() -> None:
     assert broker._safe([ENV["WEBULL_SANDBOX_APP_KEY"]]) == ["[redacted]"]
     fee_values: list[Any] = [None, "", []]
     for fees in fee_values:
-        data = order_item(filled_quantity="1", filled_price="1", fees=fees)
-        assert parsing.fill(data, parsing.order(data)).costs == ()
+        data = order_item(status="FILLED", filled_quantity="1", filled_price="1", fees=fees)
+        assert parsing.fill(data, parsing.order(data), lambda day: day, NOW).costs == ()
 
 
 def test_additional_shape_metadata() -> None:
@@ -669,3 +703,64 @@ def sdk_config_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
         return result
 
     monkeypatch.setattr(sdk.ApiClient, "get_response", response)
+
+
+@pytest.mark.parametrize("status", list(parsing.STATUSES))
+@pytest.mark.parametrize("quantity", ["0", "0.1", "1"])
+def test_only_terminal_nonzero_snapshots_produce_fills(status: str, quantity: str) -> None:
+    broker, fake = setup()
+    fake.orders["order-1"] = order_item(status=status, filled_quantity=quantity, filled_price="100")
+    fills = broker.fills_since(NOW)
+    terminal = status in {"FILLED", "CANCELLED", "FAILED"}
+    if terminal and Decimal(quantity) > 0:
+        assert len(fills) == 1
+        assert fills[0].fill.fill_id == "order-1:final"
+        assert fills[0].fill.quantity == Decimal(quantity)
+    else:
+        assert fills == []
+    snapshot = broker.order_status("order-1")
+    opened = broker.open_orders()[0]
+    assert opened == snapshot
+    if not terminal:
+        assert snapshot.status is OrderStatus.SUBMITTED
+        assert snapshot.filled_quantity == 0
+        assert snapshot.average_fill_price is None
+
+
+@pytest.mark.parametrize("filled_time", [None, "2026-10-23T00:30:00.000Z"])
+def test_observation_time_across_pages_costs_and_settlement(filled_time: str | None) -> None:
+    broker, fake = setup()
+    sell = order_item(
+        "sale",
+        side="SELL",
+        status="FILLED",
+        filled_quantity="1",
+        filled_price="100",
+        place_time_at="2026-10-22T00:30:00.000Z",
+        filled_time_at=filled_time,
+        commission={"actual_commission": "0.01"},
+        fees=[{"type": "CAT_FEE", "actual_value": "0.001"}],
+    )
+    buy = order_item("buy", status="FILLED", filled_quantity="1", filled_price="100")
+    fake.queue("history", {"data": [{"orders": [sell]}], "pagination_key": "next"})
+    fake.queue("history", {"data": [{"orders": [buy]}]})
+    fills = broker.fills_since(NOW)
+    assert len(fills) == 2
+    assert fake.clock.now() > NOW  # The fake advances during each page request.
+    assert all(item.fill.ts == NOW for item in fills)
+    assert all(cost.ts == NOW for item in fills for cost in item.costs)
+    assert fills[0].settles_on == NOW.date() - timedelta(days=1 if filled_time else 2)
+    assert fills[1].settles_on is None
+    assert len(fills[0].costs) == 2
+
+
+@pytest.mark.parametrize("offset", [-1, 0, 1])
+def test_history_overlap_clamps_at_six_month_boundary(offset: int) -> None:
+    broker, fake = setup()
+    earliest = NOW.replace(month=4)
+    cursor = earliest + timedelta(days=7, milliseconds=offset)
+    assert broker.fills_since(cursor) == []
+    start = max(earliest, cursor - timedelta(days=7))
+    assert fake.calls[0][1]["start_time"] == start.isoformat(timespec="milliseconds").replace(
+        "+00:00", "Z"
+    )

@@ -1,159 +1,143 @@
-# LAST_REPORT — TASK-008, review round 3
+# LAST_REPORT — TASK-008, review round 5
 
 Status: DONE
 
 ## Summary
-The sandbox adapter now runs SDK 3.0.4's own `ClientInitializer.initializer` after validating the
-resolved UAT host and assigning a private temporary token directory. Token checks use a
-10-second duration and 5-second interval; initialized and pending tokens join the in-memory
-redaction set. The sandbox command now writes safe token facts and stops after initialization
-or SB-1 authentication failure, marking every remaining check `skipped_auth` without further
-API calls. All required checks passed offline, including the existing broker contracts and
-byte-identical fixture backtests; actual sandbox authentication remains for the operator to verify.
+Completed the retained round-4 changes under the designer's round-5 rules R1–R3.
+Webull emits one terminal cumulative fill per order with a stable `:final` ID, using the
+start-of-poll observation time for both the fill and its costs. Working orders expose SUBMITTED
+with zero filled quantity and no average price; sale settlement still uses the actual execution's
+New York trade date and the injected settlement-date function. Real Ledger/OrderManager tests now
+pass for BUY/SELL, late cancelled partial executions, repeated delivery, and terminal-status races.
 
-Task / execution: TASK-008, review round 3, owner Mac (Darwin), Python 3.14.7.
-Starting branch: `claude/project-thread-whk5dv`.
-Starting and final HEAD: `ff1ef94085a020174af8feb97cae1f332185da10`.
-The initial worktree was clean. The complete designer instructions were already present in
-`.ai/CURRENT_TASK.md`; they were read fully and preserved unchanged. No Git mutation was performed.
+Task / execution: TASK-008, review round 5; owner Mac (Darwin), Python 3.14.7.
+Branch: `claude/project-thread-whk5dv`; starting and final HEAD:
+`87127acfb90592e57e21ea0173c407c8a1a4f519`.
+The worktree already contained the round-4 implementation, tests and BLOCKED report; these were
+preserved and continued as explicitly required. `.ai/CURRENT_TASK.md` already held the complete
+instructions including round 5; it was read fully and left unchanged. No other task was started.
 
 ## Files changed
+The following list includes the retained round-4 work and this round's changes relative to HEAD.
+
 - `.ai/LAST_REPORT.md`
-- `docs/dev/setup.md`
 - `src/aitrader/broker/webull/broker.py`
-- `src/aitrader/broker/webull/check.py`
-- `src/aitrader/broker/webull/sdk.py`
-- `src/aitrader/broker/webull/settings.py`
+- `src/aitrader/broker/webull/parsing.py`
 - `src/aitrader/cli/main.py`
+- `tests/contract/test_brokers.py`
+- `tests/contract/test_sandbox_check.py`
+- `tests/contract/webull_fake.py`
 - `tests/unit/broker/test_webull.py`
-- `tests/unit/broker/test_webull_tokens.py` (added)
+- `tests/unit/broker/test_webull_tokens.py`
+- `tests/integration/test_webull_fills.py` (added)
 
 ## Commands run
-All uv commands used `UV_OFFLINE=true UV_NO_SYNC=true UV_CACHE_DIR=.cache/uv` to use the installed
-environment without dependency synchronization, downloads or the external uv cache.
+All uv commands used `UV_OFFLINE=true UV_NO_SYNC=true UV_CACHE_DIR=.cache/uv` to prevent
+synchronization/downloads and keep the cache in the repository. No dependency was installed.
 
 - `uv run ruff check`: PASS, all checks passed.
-- `uv run ruff format --check`: PASS, 158 files already formatted.
-- `uv run mypy`: PASS, no issues in 157 source files.
-- `uv run lint-imports`: PASS, 9 contracts kept, 0 broken; 124 files and 500 dependencies analyzed.
-- `uv run pytest --cov=aitrader`: PASS, **1237 passed in 26.94s**, no warnings reported.
-- `uv run coverage report --include='src/aitrader/*' --fail-under=90`: PASS, every reported module
-  has **100% statement and branch coverage**; total 4784 statements, 1184 branches, none missed.
+- `uv run ruff format --check`: PASS, 159 files already formatted.
+- `uv run mypy`: PASS, no issues found in 158 source files.
+- `uv run lint-imports`: PASS, 9 contracts kept, 0 broken; 124 files, 502 dependencies.
+- `uv run pytest --cov=aitrader`: PASS, **1264 passed in 26.65s**.
+- `uv run coverage report --include='src/aitrader/*' --fail-under=90`: PASS, **100%** in every
+  reported module; 4790 statements and 1186 branches, none missed or partially covered.
 - `uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir bt-a --start 2023-01-03 --end 2024-12-31`:
-  PASS, run ID `bt-4afa6c7b1b50d74d`.
+  PASS, run ID `bt-f29d12382c61def6`.
 - `uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir bt-b --start 2023-01-03 --end 2024-12-31`:
   PASS, same run ID.
-- `diff -r bt-a bt-b && rm -rf bt-a bt-b`: PASS, exit 0, no differences; generated directories removed.
-- `uv run pytest tests/unit/broker tests/contract --cov=aitrader.broker.webull --cov-report=term-missing`:
-  intermediate targeted run PASS, 227 passed; all Webull modules 100%. Two subsequent CLI token-fact
-  cases are included in the final full run above.
-- `uv run ruff format`: PASS, applied formatting before the final checks.
+- `diff -r bt-a bt-b && rm -rf bt-a bt-b`: PASS, exit 0, byte-identical; only the two newly
+  generated output directories were removed. Both were confirmed absent before creating them.
+- `uv run ruff format`: PASS, 3 files reformatted, 156 unchanged.
+- `uv run pytest tests/integration/test_webull_fills.py tests/contract tests/unit/broker -q --no-cov`:
+  initial FAIL on the obsolete same-timestamp redelivery assertion; updated to verify a newer
+  observation time with identical execution content and stable ID, as R1 requires.
+- `uv run pytest tests/integration/test_webull_fills.py tests/contract tests/unit/broker --no-cov`:
+  intermediate FAIL, 1 failed / 255 passed. The new cancel-race fixture incorrectly marked a
+  fully executed order CANCELLED while expecting the manager to retain that state. Corrected
+  the fixture to a genuine partial cancellation (0.1 of 0.3); the final full suite above passes.
+- `uv run pytest tests/unit/broker/test_webull.py::test_history_overlap_clamps_at_six_month_boundary --no-cov`:
+  PASS, 3 passed in 1.40s. This was run after refining the boundary offsets to milliseconds,
+  matching the API request's timestamp precision.
 - `git diff --check`: PASS.
 
-Intermediate test failures were fixed before the final run: an existing SDK-path test needed
-its fake config response to delegate subsequent trading calls to the actual SDK method, and
-a new secret-safety fixture needed an explicit whole-share quantity. Initial lint and typing
-findings in the new tests were corrected. No checks, thresholds or assertions were weakened.
-
 ## Acceptance criteria
-- [x] **AC 1 — common BrokerPort contracts**: the full suite passes, including every existing
-  parametrized SimBroker and fake-backed WebullBroker contract case.
-- [x] **AC 2 — UAT boundary, including initializer guard**:
-  `test_wrong_resolved_host_never_calls_initializer` proves neither the initializer nor HTTP
-  transport is called for a production-resolved client.
-  `test_host_is_checked_again_immediately_before_initializer` changes resolution when the token
-  directory is assigned and verifies refusal and directory cleanup before initialization.
-  Existing production-host, non-sandbox-environment and send-time endpoint tests also pass.
-  Initializer calls re-check resolution and pin each request to the allowed UAT host.
-- [x] **AC 3 — credentials and tokens stay secret**:
-  `test_token_is_redacted_from_sdk_logs_errors_status_and_report` sets root logging to DEBUG,
-  drives successful submit plus 401, 417 and 500 through the actual SDK response/error path,
-  and scans logs, exception strings, repr and the written report for all three invented
-  credentials and an invented access token. It also verifies redaction of a token echoed as
-  an unknown order status. Initialization error and CLI report tests check token safety as well.
-- [x] **AC 4 — no submit retries**: the existing unknown-submit-outcome and actual SDK
-  single-timeout-attempt tests pass. `auto_retry=False` is preserved during initialization and
-  trading; no token-request implementation or trading retry loop was added.
-- [x] **AC 5 — sandbox CLI/report, authentication stop and token facts**:
-  `test_config_auth_failure_stops_cli_and_writes_report` verifies HTTP 401 and 403, both as SDK
-  server exceptions and returned responses: one config request, exit 1, token failure code,
-  latency and HTTP status recorded, every other check skipped, private directory removed.
-  `test_sb1_auth_stops_every_remaining_call` covers 401 and 403 at accounts, balance, positions
-  and instrument probes: the failing call is last and no order is sent.
-  `test_cli_success_reports_only_token_facts` covers token-enabled and token-disabled exit-0
-  reports; the token check contains configuration enabled/unknown, status, expiry presence,
-  error code, HTTP status and latency without token contents or expiry values.
-  Existing B2 outcomes and missing-variable exit-2 tests pass.
-- [x] **AC 6 — SDK import isolation**: all import contracts and architecture tests pass; no
-  import contract was changed.
-- [x] **AC 7 — checks and coverage**: all mandatory checks pass; every existing and new reported
-  module remains at 100% statement and branch coverage.
-- [x] **AC 8 — fixture determinism**: both fixture runs completed and recursive diff returned 0.
-- [x] **A1 — SDK token lifecycle and bounded checks**:
-  `test_sdk_token_enabled_normal_or_disabled` uses the SDK's real initializer, request builders
-  and HTTP signing path with fake HTTP responses. Enabled/NORMAL sends `x-access-token` on the
-  next trading call; disabled sends no token header and proceeds. Header assertions retain only
-  presence, never token contents. Constructor duration/interval are exactly 10/5 seconds, config
-  initialization runs once, the directory is private, and `close()` removes it.
-  `test_pending_token_stops_within_bounded_sdk_poll` patches only the SDK token-manager module's
-  clock/sleep: two simulated 5-second waits, then `BrokerAuthError` with `ERROR_INIT_TOKEN`, no
-  trading calls and no real waiting. The temporary token file/directory is removed on failure.
-  Additional tests cover all four requested initializer ClientException codes, I/O and malformed
-  response failures, unknown configuration metadata and incomplete token responses.
-- [x] **Documentation**: setup now describes initialization, bounded status checks, authentication
-  stopping and safe token facts. The existing authorized document-14 automation note is retained.
+- [x] AC 1, common contracts for both brokers — the full suite passes all contract cases.
+  `test_partial_and_final_fills` checks the union by fill ID across partial and repeated final
+  polls, with no over-booking and final total equal to the final quantity. SimBroker exposes its
+  partial quantity; Webull exposes SUBMITTED / zero / no average until terminal.
+- [x] AC 2, sandbox isolation — host/environment rejection tests and
+  `test_wrong_resolved_host_never_calls_initializer` pass. No host guard was relaxed.
+- [x] AC 3, secrets — existing credential/token log, exception, repr and report tests pass,
+  including `test_token_is_redacted_from_sdk_logs_errors_status_and_report` and
+  `test_secret_values_never_reach_output_repr_exceptions_or_report`.
+- [x] AC 4, submit not retried — single-attempt SDK timeout and unknown-outcome contract tests
+  pass, including `test_real_sdk_http_path_logging_errors_and_single_timeout`.
+- [x] AC 5, sandbox CLI — all fake-backed outcome/report, token-fact, skipped-auth and
+  exit-code 0/1/2 tests pass. Raw Webull status strings remain available through the existing
+  observer metadata; normalized BrokerOrder fields do not alter those report strings.
+- [x] AC 6, SDK import isolation — all 9 import contracts pass unchanged.
+- [x] AC 7, required checks and coverage — all green; every module remains at 100% statement
+  and branch coverage.
+- [x] AC 8, fixture reproducibility — two backtests have identical run IDs and recursive diff
+  exits 0.
+- [x] F1 / R1, terminal-only fills and cursor safety —
+  `test_only_terminal_nonzero_snapshots_produce_fills` covers all six documented statuses and
+  zero/partial/full quantities, including cancelled zero fills;
+  `test_cancelled_partial_older_than_cursor_is_booked_once` uses the real ledger and manager,
+  books the older execution once, and emits no MISMATCH. Seven-day overlap, six-month clamp,
+  the old-cursor refusal and 50-page cap are covered by unit tests.
+- [x] F2, sale settlement — `test_manager_books_buy_then_sell_once_with_settlement` verifies
+  one ledger execution per BUY/SELL, quantities, unsettled sale cash and settlement date.
+  `test_observation_time_across_pages_costs_and_settlement` verifies a common poll-start time
+  across pages and costs, New York date conversion, timestamp fallback and BUY settlement None.
+  CLI construction supplies `TradingCalendar().settlement_date`.
+- [x] R2 / R3, status/history race —
+  `test_terminal_status_before_history_fill_waits_for_next_sync` passes for both SUBMITTED and
+  CANCEL_PENDING. No fill is booked when only detail sees the terminal order; the next sync
+  books it once, reaches the terminal state and produces no MISMATCH.
 
-## GUI verification and Expected / Actual
-GUI verification: NOT_RUN; this change concerns a broker adapter and CLI.
+## Expected / Actual and reproduction
+Expected: terminal cumulative snapshots book exactly once, older executions do not violate
+chronological ledger application, and working snapshots cannot force an unbooked partial state.
+Actual: all four integration cases pass using real Ledger and OrderManager with handwritten fake
+SDK responses. No ledger, manager or BrokerPort change was needed.
 
-Offline CLI operations used CliRunner with invented credentials and fake responses beneath the
-real SDK HTTP boundary. Expected / Actual: enabled NORMAL token adds the header; disabled token
-omits it; both complete with exit 0 and safe token facts. Config authentication failure exits 1
-after exactly one HTTP attempt. SB-1 authentication failure exits 1 and makes no later API call.
-Pending token polling ends at a simulated 10 seconds without real waiting. Missing environment
-variables still exit 2. All expected outcomes were observed in the final test run.
+Reproduce offline:
 
-## SDK logging configuration
-The installed SDK source was inspected, including the initializer, TokenManager, token storage,
-config/token request classes and ApiClient HTTP signing/error paths. `TradeClient` internals are
-not required and `TradeClient` is never constructed. Existing suppression remains active before
-SDK construction: each logger below uses level `logging.CRITICAL + 1`, `propagate=False` and a
-`logging.NullHandler()`; no new SDK logger name was found for this initialization path.
+```bash
+UV_OFFLINE=true UV_NO_SYNC=true UV_CACHE_DIR=.cache/uv uv run pytest tests/integration/test_webull_fills.py --no-cov
+```
 
-- `webull`
-- `webull.core`
-- `webull.data`
-- `webull.core.client`
-- `webull.core.http.response`
-- `webull.core.retry.retry_condition`
-- `webull.core.auth.signers.app_key_signer`
-- `webull.core.auth.composer.default_signature_composer`
-- `webull.core.http.initializer.client_initializer`
-- `webull.core.http.initializer.token.token_storage`
-- `webull.core.http.initializer.token.token_manager`
-- `webull.data.internal.quotes_client`
-- `webull.trade.events.signature_composer`
-- `webull.trade.trade_events_client`
+GUI verification: NOT_RUN; this task concerns a broker adapter and CLI.
+No warnings were emitted by the final required checks. Intermediate test failures above were
+resolved without weakening checks or the approved lifetime-fill property.
 
 ## Deviations from the task or the design
-None. Initialization transport/JSON failures also fail closed as authentication failures, so the
-operator receives a safe report instead of proceeding to order probes. The SDK's own pending-token
-polling is used unchanged; only its configured duration/interval are bounded as requested.
+None. The approved round-5 accounting assumption is explicit: fill/cost timestamps represent
+observation at the start of a history poll, not exchange execution time. Re-delivery has a newer
+observation timestamp and the same fill ID, so the existing ledger-ID check drops it before
+booking. Only settlement uses the execution timestamp (or placement timestamp fallback), converted
+to America/New_York. Working partial exposure remains invisible until the order is terminal;
+this is the designer-approved limitation recorded as U17, not a claim of real-time fill accuracy.
+Observation delay depends on successful polling; no real-world timing guarantee was measured.
+
+The existing SDK log suppression is unchanged. Installed SDK source was inspected locally;
+its logger names are suppressed through `SDK_LOGGERS`:
+`webull`, `webull.core`, `webull.data`, `webull.core.client`, `webull.core.http.response`,
+`webull.core.retry.retry_condition`, `webull.core.auth.signers.app_key_signer`,
+`webull.core.auth.composer.default_signature_composer`,
+`webull.core.http.initializer.client_initializer`,
+`webull.core.http.initializer.token.token_storage`,
+`webull.core.http.initializer.token.token_manager`, `webull.data.internal.quotes_client`,
+`webull.trade.events.signature_composer`, `webull.trade.trade_events_client`.
 
 ## Open issues and questions
-No unresolved implementation issue or designer decision is required for this offline cycle.
+No unresolved implementation blocker. Real sandbox execution remains NOT_RUN and reserved for
+the operator; these results establish offline adapter behavior, not real API acceptance or fill
+realism. Owner approval of the Webull protected path remains required before merge.
 
-Actual sandbox verification: **NOT_RUN**, reserved for the operator. Fake responses establish
-SDK initialization, header construction, safe reporting and stopping behavior; they do not prove
-that the operator's current credentials authenticate, that the real UAT token is NORMAL, or that
-actual sandbox order rules and responses match the fixtures. The owner/operator still needs to
-correct their configured values and run the sandbox command once after review/push, then send
-the resulting sanitized report to the designer.
-
-Owner approval remains required in the PR for the task-authorized Webull adapter path. The
-operator handles staging, commits, pushes and PRs.
-
-Intentionally not performed: real Webull/API calls, inspection of actual credentials or existing
-tokens, dependency installation/downloads, production endpoints, LIVE/PAPER routing changes,
-2FA or human-verification flow, streaming/market data, protected risk/gate/hard-cap changes,
-build-system changes, Git mutations or a subsequent implementation cycle.
+Intentionally not performed: network/API calls, inspecting real credentials or token files,
+production/LIVE/PAPER routing changes, dependency installation, design-document changes,
+protected risk/gate/hard-cap changes, Git staging/commit/push/branch changes, and another cycle.
+The required setup documentation and document-14 automation note already exist and were preserved.

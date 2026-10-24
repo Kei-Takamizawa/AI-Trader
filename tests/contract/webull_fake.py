@@ -145,6 +145,7 @@ class FakeTransport:
                 return FakeResponse({"error_code": "INVALID_PARAMETER", "message": "rule"}, 417)
             self.orders[cid] = order_item(
                 cid,
+                side=data["side"],
                 total_quantity=data["quantity"],
                 limit_price=data.get("limit_price"),
                 order_type=data["order_type"],
