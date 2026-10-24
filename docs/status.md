@@ -20,7 +20,7 @@ in this build.
 | TASK-009 | SQLite storage: orders, journal, halts, decisions, runs, single-instance lock and lease | done |
 | TASK-010 | Reconciliation of the engine's books against the broker | done |
 | TASK-007a | Point-in-time adjusted signals, raw fills, dividends as cash, exact split ratios | done (Codex cycle 1, PR #2) |
-| TASK-007b | Strategy S1 and the walk-forward runner | **next** (spec to be written) |
+| TASK-007b | Strategy S1, walk-forward runner, minor vendor adjustments | **in progress** (Codex cycle 2, `.ai/CURRENT_TASK.md`) |
 | TASK-007c | Research report on real data (operator runs it) | after 007b and the real download |
 | TASK-008 | Webull adapter on the official SDK, contract tests, sandbox runs | later (phase P3b) |
 
@@ -59,9 +59,8 @@ tests. Claude implemented TASK-002 to TASK-006, TASK-009 and TASK-010 itself bef
 
 ## Next steps
 
-1. **TASK-007b spec (designer):** strategy S1 and the walk-forward runner. It must also decide
-   how to treat the small "unexplained" factors (1.0005 to 1.0009) found in the real data, which
-   currently fail closed when held.
+1. **Cycle 2 (TASK-007b):** strategy S1, the walk-forward runner, and minor vendor adjustments
+   (unexplained factors within 0.2% no longer fail closed). Spec in `.ai/CURRENT_TASK.md`.
 2. **Data fetch follow-up:** handle the free plan's limit on recent SIP data (for example an
    explicit end timestamp or a later end date); the designer verifies Alpaca's documentation first.
 3. TASK-007c (research report and go/no-go per strategy, phase P2 exit), run by the operator.

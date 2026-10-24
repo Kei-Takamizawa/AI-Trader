@@ -1,259 +1,199 @@
-# CURRENT_TASK — TASK-007a: point-in-time adjusted signals, raw fills, dividends as cash
+# CURRENT_TASK — TASK-007b: strategy S1, walk-forward runner, minor vendor adjustments
 
 Designer: Claude (cloud), 2026-10-24. Implementer and tester: Codex. Read `AGENTS.md` first.
+The previous task's spec is archived in `docs/tasks/TASK-007a.md`.
 
-Design sources: document 12 §2 (row "Adjusted-price leakage": signals use split- and
-dividend-adjusted series computed only from information available at the time; fills use the
-unadjusted price of that day; dividends are booked as cash), document 03 §2 (`portfolio` books
-dividends), `docs/tasks/TASK-006.md` (the `raw/` and `adjusted/` series written by
-`aitrader data fetch`).
+Design sources: document 11 §3 (S1, the S2 grid note, benchmarks), document 12 §2 (data snooping,
+hold-out), §3 (walk-forward protocol), §6 (metrics), §7 (manifest); `docs/status.md`, section
+"First real download".
 
 No new dependency, no network, no credential and no protected path are needed. If you find that
-one is needed, stop with BLOCKED as `AGENTS.md` says.
+one is needed, stop with BLOCKED as `AGENTS.md` says. Month arithmetic is small enough to write by
+hand (no `dateutil`).
 
 ## Why
 
-`aitrader data fetch` stores two series per symbol: `raw/` (prices actually traded) and
-`adjusted/` (Alpaca `adjustment=all`, back-adjusted from the download date). Neither can be used
-alone:
+Phase P2 needs a research run on real data with a pre-declared, small parameter grid, chosen on
+training windows only and reported on the test windows that follow them, while the last 24 months
+stay locked (document 12). S2 exists; S1, the walk-forward runner and one data fix are missing.
 
-- **Raw prices for signals** show a split as a crash and every ex-dividend date as a small drop;
-  stops, RSI and the large-move check (DQ-3) react to moves that did not cost anything.
-- **Adjusted prices for signals and fills** use information from the future: a dividend paid in
-  2024 lowers every price before it, so a 2018 decision would see 2018 prices that nobody saw in
-  2018, and fills, stops and position sizes would be at prices that never traded.
-
-This task makes the backtest use, at each session, a history adjusted only for the corporate
-actions known at that session, while fills, quotes, volumes for the participation cap and equity
-marks stay on raw prices, and dividends arrive as cash.
-
-## Definitions
-
-For one symbol, with sessions present in both series:
-
-- `r_t = raw_close_t / adjusted_close_t`, and for consecutive sessions `factor_t = r_t / r_{t-1}`.
-- Classification of session `t` (the ex-date), with the existing constants
-  `RATIO_TOLERANCE = 0.0005` and `SPLIT_THRESHOLD = 0.2` from `aitrader.data.ingest`:
-
-  | Condition | Kind |
-  |---|---|
-  | `abs(factor_t - 1) <= RATIO_TOLERANCE` | no action (rounding of the adjusted prices) |
-  | `abs(factor_t - 1) > SPLIT_THRESHOLD` | `SPLIT` (also reverse splits) |
-  | `1 - SPLIT_THRESHOLD <= factor_t < 1 - RATIO_TOLERANCE` | `DISTRIBUTION` |
-  | `1 + RATIO_TOLERANCE < factor_t <= 1 + SPLIT_THRESHOLD` | `UNEXPLAINED` |
-
-- Cash per share of a distribution: `D = raw_close_{t-1} * (1 - factor_t)`, quantized to
-  0.000001 USD (ROUND_HALF_EVEN). This follows from the usual adjustment multiplier
-  `1 - D / raw_close_{t-1}` for all sessions before the ex-date. It is an estimate from the two
-  price series, not the declared amount.
-- **Point-in-time (PIT) history as of the close of session `t`:** for every bar `s <= t`,
-  `open, high, low, close = raw_s * M_t(s)`, where `M_t(s)` is the product of `factor_e` over all
-  detected actions `e` with `s < e <= t`, quantized to 0.0001 (ROUND_HALF_EVEN). Volume:
-  `raw_volume_s` divided by the product of the `SPLIT` factors only (distributions do not change
-  share counts), rounded to a whole share (ROUND_HALF_EVEN). Bars with no action after them up to
-  `t` are the raw bars unchanged; in particular the last bar of every PIT history is the raw bar.
-
-Build the PIT history from the raw bars and the detected factors (not by rescaling the adjusted
-series): the result is the same up to rounding, it is exactly raw between actions, and it can be
-cached per action segment.
+The data fix: the first real download (2026-10-16) found 16 `UNEXPLAINED` actions, all with factors
+between 1.0005 and 1.0009 (XLE 11, XLU 4, XLF 1), which is just above `RATIO_TOLERANCE`. They look
+like vendor rounding or small corrections. Under TASK-007a each one would stop a backtest with
+`CorporateActionError` whenever the symbol is held, so a 10-year research run could not finish.
 
 ## Scope
 
-1. **New module `src/aitrader/data/adjusted.py`** (export the public names from
-   `aitrader.data`):
-   - `CorporateActionKind` (`StrEnum`: `DISTRIBUTION`, `SPLIT`, `UNEXPLAINED`) and
-     `CorporateAction` (frozen: `symbol`, `session`, `kind`, `factor`, `cash_per_share`, which is
-     zero unless `DISTRIBUTION`).
-   - `CorporateActionError(DataError)`.
-   - Detection as defined above. `aitrader.data.ingest.corporate_actions` must use the same
-     detection (one implementation). Its entries in `fetch_report.json` keep their format; the kind
-     strings are `"split"`, `"distribution"` and the new `"unexplained"`.
-   - `PointInTimeBars(raw: DailyBarSource, adjusted: DailyBarSource | None)`. With `adjusted=None`
-     there are no actions and `history()` returns exactly `raw.history()`. Otherwise both sources
-     must have the same symbols and, per symbol, the same sessions; any difference is a
-     `DataError` naming the symbol and the first differing session.
-   - Methods: `symbols`, `actions(symbol)`, `actions_on(session)` (sorted by symbol),
-     `history(symbol, as_of)` (bars whose session closed at or before `as_of`, as
-     `DailyBarSource.history`), `snapshot_hash` (raw) and `signal_snapshot_hash` (adjusted, or
-     `None`).
-   - Performance: the real data has 23 symbols, about 2,700 sessions each and up to 12
-     distributions a year per symbol. Build each scaled series once per (symbol, number of
-     actions so far) and cache it; never rebuild a history every session. Scaled bars may be made
-     with `Bar.model_copy(update=...)`: a positive factor and monotone rounding keep the OHLC
-     invariants (a test must check that they hold).
+### A. Minor unexplained adjustments (`src/aitrader/data/adjusted.py`, `backtest/engine.py`)
 
-2. **Backtest engine (`src/aitrader/backtest/engine.py`):**
-   - `run_backtest(settings, strategy, source, *, adjusted: DailyBarSource | None = None, ...)`.
-     `source` (raw) stays the only input for quotes, fills, the volume participation cap and
-     equity marks. The engine builds `PointInTimeBars(source, adjusted)` and uses its `history()`
-     wherever it uses `source.history()` today: the `histories` passed to `cycle.execute` and the
-     `StrategyContext.history`.
-   - **Dividends:** at the start of each session, after settlement and before the open, for each
-     `DISTRIBUTION` on that session in a symbol held at that moment (that is, at the previous
-     close): `gross = quantity * D` rounded to the cent (ROUND_HALF_EVEN); US withholding
-     `gross * us_pct / 100`, Japanese withholding `(gross - us) * jp_pct / 100`, each rounded to
-     the cent (ROUND_HALF_EVEN). Book it with `Ledger.record_dividend` (deterministic entry ID,
-     for example `div-<SYMBOL>-<YYYY-MM-DD>`) and credit the same amounts to the `SimBroker`
-     through a new method `SimBroker.credit_dividend(...)` that books the same entry in the
-     simulator's own ledger, so broker cash and engine cash stay equal. If `gross` rounds to zero,
-     nothing is booked. The cash counts as settled on the ex-date (in reality it is paid later;
-     say so in the docstring). Protective stops are not changed on ex-dates.
-   - **Fail closed:** if a `SPLIT` or `UNEXPLAINED` action falls on session `t` in a symbol that is
-     held at the previous close or has a pending intent for `t`, raise `CorporateActionError`
-     naming the symbol, session, kind and factor. Otherwise such an action only changes the
-     signal history.
+- New constant `MINOR_ADJUSTMENT_LIMIT = Decimal("0.002")` next to the others.
+- Detection does not change: kinds, factors and `fetch_report.json` stay as they are.
+- In the engine, an `UNEXPLAINED` action with `abs(factor - 1) <= MINOR_ADJUSTMENT_LIMIT` does
+  **not** fail closed. It still changes the signal history, as today, and books no cash. Larger
+  `UNEXPLAINED` actions and all unsupported `SPLIT`s fail closed exactly as before. Fills, equity
+  and P&L use raw prices, so a minor adjustment changes signals by at most 0.2% and never cash.
+- The manifest's `corporate_actions` gains one count, `unexplained_minor`: the `UNEXPLAINED`
+  actions in the period within the limit. They are also still counted under `unexplained`.
 
-3. **Settings:** `BacktestSettings.dividend_us_withholding_pct` (default `10`) and
-   `dividend_jp_withholding_pct` (default `20.315`), both between 0 and 100. Add both to
-   `config/backtest.yaml` with a comment that they are assumptions to confirm with the broker's
-   tax documents (US-Japan treaty rate for dividends; Japanese income and resident tax in a
-   tokutei account with withholding, decision Q9). `src/aitrader/config/hard_caps.py` is not
-   touched.
+### B. Next session in the strategy context
 
-4. **Benchmark and results (`src/aitrader/metrics/performance.py`,
-   `src/aitrader/backtest/manifest.py`):**
-   - `buy_and_hold` accepts the benchmark's distributions (session to cash per share) and books
-     them as cash with the same withholding, so the benchmark is not missing its dividends. With
-     no distributions its result is unchanged.
-   - `metrics.json` gains `dividends_gross_usd` and `withholding_tax_usd` (from
-     `Ledger.trading_pnl`). Existing keys keep their names and meaning.
-   - The manifest keeps `data_snapshot_hash` (raw) and gains `signal_data_snapshot_hash`
-     (`null` without an adjusted series) and `corporate_actions` (counts per kind inside the
-     backtest period).
+- `StrategyContext.next_session: date | None = None`: the exchange session in which intents will
+  be executed. The backtest engine fills it from the calendar it already uses (`next_session`).
+  Strategies still import only `aitrader.domain` and `aitrader.indicators`.
 
-5. **CLI `aitrader backtest --data-dir`:** if the directory has both `raw/` and `adjusted/` (the
-   layout `aitrader data fetch` writes), use them; if it has only one of the two, exit with code 4
-   and say which is missing; otherwise read the flat layout as today (no adjustments).
-   `CorporateActionError` exits with code 4 and its message.
+### C. Strategy S1: trend-filtered momentum rotation (`src/aitrader/strategy/momentum.py`)
 
-6. **Docs:** update the backtest part of `docs/dev/setup.md` (both layouts; remove the "Until it is
-   merged" warning); add a one-line "Implemented in TASK-007a" note under the table in document 12
-   §2. Do not change other design documents.
+`MomentumParams` (frozen dataclass; values as in document 11 §3):
+
+| Field | Default |
+|---|---|
+| `symbols` | U0 without the cash proxy: SPY, IVV, VOO, VTI, QQQ, IWM, XLB, XLC, XLE, XLF, XLI, XLK, XLP, XLRE, XLU, XLV, XLY, SHY, IEF, TLT, GLD, IAU |
+| `equivalents` | `(("SPY", "IVV", "VOO"), ("GLD", "IAU"))`: same index or same asset |
+| `lookback` | 126 |
+| `skip` | 0 |
+| `trend_period` | 200 |
+| `top_n` | 3 |
+| `atr_period` | 20 |
+| `atr_stop_multiple` | 3 |
+| `target_weight` | 0.25 |
+
+`MomentumStrategy`, ID `S1`, version `1.0.0`, registered in `STRATEGIES`. Rules:
+
+1. **Weekly review only.** A session is a review session when `ctx.next_session` is `None` or
+   falls in a different ISO week (`isocalendar()[:2]`) than `ctx.session`. This makes the review
+   the last session of the week. On other sessions return no intents. Protective stops still run
+   every session in the engine.
+2. **Eligible:** a symbol with enough bars for `sma(trend_period)`, `atr(atr_period)` and
+   `total_return(lookback, skip)`, whose last close is above its `sma(trend_period)`.
+3. **Ranking:** by `total_return(closes, lookback, skip)` descending, ties by symbol ascending.
+   The history is point-in-time adjusted (TASK-007a), so this is a total return including
+   distributions.
+4. **Equivalents:** at most one member of each `equivalents` group is selected. If a member is
+   held and eligible, it represents the group (no switching between equivalent ETFs). Otherwise
+   the best-ranked eligible member represents it.
+5. **Selected set:** the first `top_n` entries of the ranking after rule 4.
+6. **Exits:** each held symbol that is not in the selected set gets an `EXIT` for its whole
+   quantity. That covers dropping out of the top ranks, closing below the trend average and no
+   longer being eligible. The reason names which of these applies.
+7. **Entries:** each selected symbol that is not held gets a BUY with
+   `target_notional = equity_usd * target_weight` (to the cent) and
+   `stop_price = last_close - atr_stop_multiple * ATR`, to the cent. If that stop is ≤ 0, there is
+   no entry. The risk engine then sizes every entry to the same risk per trade (0.5% of equity at
+   the stop), which is document 11's "equal risk". `target_weight` is only a cap.
+8. **Cash:** when fewer than `top_n` symbols are eligible, the rest stays in cash. A cash proxy (BIL)
+   is not used in version 1.0.0; this is a deliberate choice from document 11 ("cash proxy or
+   cash"). Stops are set at entry and never loosened, and there is no trailing rule in 1.0.0.
+
+`params()` returns every field as a string, so that `params_hash` changes with any field.
+
+### D. Walk-forward runner (`src/aitrader/backtest/walkforward.py`) and `aitrader walkforward`
+
+- **Grids, declared in code before any run** (document 12 §2: a small, pre-declared grid):
+  - S1: `top_n ∈ {3, 2}` × `skip ∈ {0, 5}`, four variants in the order (3, 0), (3, 5), (2, 0), (2, 5).
+  - S2: one variant, the defaults.
+  - Changing a grid is a new strategy variant and must be visible in the manifest (`grid` and
+    `variants_tried`).
+- **Windows** (document 12 §3):
+  - `data_end` is the benchmark's (SPY's) last raw session.
+  - `holdout_start` is the first session after `data_end` minus `holdout_months` (default 24)
+    calendar months.
+  - Folds start at `start`, the first session on or after `--start`: training covers
+    `[s, s + train_months)` (default 36) and testing `[s + train_months, s + train_months + test_months)`
+    (default 6), and `s` advances by `test_months`.
+  - A fold is used only if its whole test window ends before `holdout_start`. There is no
+    truncation, and nothing on or after `holdout_start` is ever run. If no fold fits, raise
+    `DataError` (CLI exit 4) with the dates.
+- **Selection:** for each fold, run every variant on the training window and pick the one with the
+  highest training `sharpe_rf0` (from the existing metrics). Ties go to the higher `total_pct`, then
+  the earlier grid order. A variant with a `None` Sharpe ranks below every number.
+- **Test:** run the selected variant on the test window. Each run, training or test, starts with
+  `initial_capital_usd` and uses all history before its start for indicators, as `run_backtest`
+  already does.
+- **Combined result:** chain the test windows' daily returns in order into one equity curve, from
+  `initial_capital_usd`. Report the same return and risk metrics as `metrics.json` (`returns`,
+  `risk`) for the chained curve, plus B0 over the same test sessions.
+- **Outputs**, written to `--out-dir`:
+  - `walkforward.json`, with per fold the train and test periods, every variant's training
+    `sharpe_rf0` and `total_pct` (so that neighbouring values can be compared for "knife-edge"
+    optima), the selected variant, and its test `returns`, `risk` and `trades`; plus the combined
+    result.
+  - `manifest.yaml`, with the git commit, config hash, strategy ID and version, the grid (each
+    variant's params hash), `variants_tried` (the grid size), the data and signal snapshot
+    hashes, window lengths, `data_end`, `holdout_start`, `holdout_used: false`, and corporate-action
+    counts.
+  - Same inputs give byte-identical files.
+- **CLI:** `aitrader walkforward --data-dir --out-dir --strategy {S1,S2} [--config-dir]
+  [--start] [--train-months 36] [--test-months 6] [--holdout-months 24]`, with the same data-dir
+  layouts and exit codes as `backtest`. The default `--start` is 2017-01-03, which leaves one year
+  of warm-up for a 200-day average plus a 126-day return. The hold-out run itself is **not** part
+  of this task.
+
+### E. Docs
+
+- `docs/dev/setup.md`: a short "Walk-forward" section with the command and what the output
+  contains.
+- Document 11 §3: one line under S1, "Implemented in TASK-007b (version 1.0.0; cash instead of a
+  cash proxy; equivalents de-duplicated)".
+- Document 12 §3: one line, "Implemented in TASK-007b".
+- Do not change other design documents.
 
 ## Out of scope
 
-- Exact declared dividend amounts and pay dates from a corporate-actions endpoint (later; the
-  designer must verify that API first).
-- Reinvesting dividends, adjusting stops on ex-dates, supporting splits in held positions.
-- Strategy S1 and the walk-forward runner (TASK-007b); the research report on real data
-  (TASK-007c, run by the operator).
+- The hold-out run, the research report and go/no-go decisions (TASK-007c, run by the operator).
+- Trailing stops, a cash proxy, volatility targeting, close-of-day execution.
+- Deflated Sharpe ratio and bootstrap intervals (TASK-007c, or a later task).
+- The data-fetch limit on recent SIP data, and the storage `ResourceWarning`.
 - Risk limits, the order gate, hard caps, LIVE, Webull.
 
 ## Acceptance criteria
 
-1. Detection: tests at, just below and just above `RATIO_TOLERANCE` and `SPLIT_THRESHOLD` for each
-   kind, and a hand-calculated `D` (for example raw close 100.00 before the ex-date and
-   `factor = 0.99` gives `D = 1.000000`).
-2. No look-ahead (hypothesis property test): generate a raw series and random distributions and
-   splits (factors away from the classification boundaries), build the adjusted series the way a
-   vendor does (back-adjusted from the last session, rounded to 0.0001). For any session `t`:
-   the PIT history as of `t` matches the series adjusted only for the actions up to `t` within
-   0.01% per price; it is the same (within 0.01%) whether the vendor data was "downloaded" at `t`
-   or later with more actions after `t`; its last bar equals the raw bar; OHLC invariants hold.
-3. Without an adjusted series nothing changes: the fixture backtest from `AGENTS.md`
-   (`--data-dir tests/fixtures/bars --start 2023-01-03 --end 2024-12-31`) gives an `equity.csv`
-   byte-identical to the one produced before your change, and every value in `metrics.json` that
-   existed before is unchanged (only new keys are added). Run it into `bt-before/` before you
-   change any file (git-ignored), compare at the end, show the comparison in the report and
-   delete the directory.
-4. Dividends: an engine test on synthetic raw and adjusted series built in `tmp_path` where a held
-   ETF goes ex-dividend: engine and broker cash rise by the same net amount; gross dividend and
-   both withholdings match a hand calculation; `aitrader.reconcile.compare_cash` finds no
-   difference; a symbol not held, or bought on the ex-date itself, receives nothing.
-5. Splits: a held symbol with a split gives `CorporateActionError` (and exit code 4 through the
-   CLI, with the message); a symbol that is not held runs through, and its signal history shows no
-   jump at the split (no DQ-3 large-move finding there).
-6. The buy-and-hold benchmark receives its distributions (test with a hand calculation).
-7. CLI: both directories, only one of them (exit 4), and the flat layout are tested.
-8. Reproducibility: a backtest on the synthetic raw/adjusted data run twice gives byte-identical
-   output files (test), and the fixture double run from `AGENTS.md` passes `diff -r`.
+1. **Minor adjustments:** engine tests with a held position.
+   - An `UNEXPLAINED` factor of `1.0019` runs through. `1.0021` raises `CorporateActionError`.
+   - The `unexplained_minor` count in the manifest is correct.
+   - No cash is booked for a minor adjustment.
+2. **`next_session`:** an engine test shows the value on a Friday before a Monday holiday (the
+   next session is Tuesday) and on a mid-week session.
+3. **S1 rules,** each with a unit test on synthetic bars:
+   - review versus non-review sessions, including a Thursday before a Good Friday;
+   - the eligibility boundary (close equal to the average is not eligible);
+   - ranking ties;
+   - `skip`;
+   - the equivalents rule, including the held-member case;
+   - exits with the right reason;
+   - entry notional and stop to the cent;
+   - fewer than `top_n` eligible leaves the rest in cash;
+   - insufficient history gives no intent;
+   - `params_hash` changes when any field changes.
+4. **S1 end to end:** a backtest on synthetic raw and adjusted series in `tmp_path` (at least five
+   symbols, including an equivalents pair, about 400 sessions) trades only on review sessions
+   (stop exits aside). Two runs give byte-identical outputs.
+5. **Walk-forward windows:**
+   - unit tests for the month arithmetic (month ends, leap day) and the fold list for a
+     hand-checked case;
+   - no fold touches `holdout_start`;
+   - "no fold fits" exits 4.
+6. **Selection:** a test with a stub strategy whose variants have known training Sharpes checks the
+   pick, both tie-breaks and the `None` rule.
+7. **Walk-forward end to end:** on synthetic data in `tmp_path` with short windows (for example
+   2/1/2 months), the outputs exist, the combined curve equals the chained test returns
+   (hand-checked), and two runs are byte-identical.
+8. The fixture backtest from `AGENTS.md` still gives a byte-identical `equity.csv` and unchanged
+   existing `metrics.json` values compared with the code before your change. Run it into
+   `bt-before/` first (git-ignored), compare at the end, report and delete.
 9. All checks in `AGENTS.md` are green; coverage stays at 100% where it is 100% today and never
    below 90% for any package.
 
 ## Notes
 
-- Existing pieces to reuse: `DailyBarSource` (`data/bars.py`), `RATIO_TOLERANCE`,
-  `SPLIT_THRESHOLD` and `corporate_actions` (`data/ingest.py`), `Ledger.record_dividend` and
-  `Ledger.trading_pnl` (`portfolio/ledger.py`), `SimBroker.fund` as a pattern
-  (`broker/sim/broker.py`), `run_backtest` (`backtest/engine.py`), `build_manifest` and
-  `metrics_for` (`backtest/manifest.py`), `buy_and_hold` (`metrics/performance.py`),
-  `BacktestSettings` (`config/settings.py`), the `backtest` command (`cli/main.py`).
-- Respect the import contracts (`uv run lint-imports`); do not loosen them. `aitrader.data` must
-  not import the engine, the portfolio or the broker.
-- No real market data in tests or in the repository: build synthetic series in the tests.
+- Reuse `run_backtest`, `PointInTimeBars`, `metrics_for`/`summarize`, `build_manifest` (or a
+  shared helper it and the walk-forward manifest both use), `buy_and_hold`, `sma`, `atr`,
+  `total_return`, the `backtest` CLI's data-dir handling (factor it into one helper rather than
+  copying it), and `make_intent_id` as in `strategy/pullback.py`.
+- Keep the import contracts; the strategy must not import the calendar, the engine or the data
+  package.
+- Running the walk-forward over 10 years of real data must stay practical: the operator runs it
+  in TASK-007c. Report the wall time of the synthetic end-to-end test and avoid recomputing
+  point-in-time histories across runs that share one data snapshot. For example, build the
+  `PointInTimeBars` once and pass it in.
+- No real market data in tests or in the repository.
 - When done, write `.ai/LAST_REPORT.md` exactly as `AGENTS.md` describes.
-
-## Review round 1 (designer, 2026-10-24) — required change before merge
-
-Commit `ec88c5a` meets most of the spec, but the property test
-`test_no_lookahead_across_vendor_download_dates` fails for some inputs. It failed once in a
-normal full run on Linux, and with `max_examples=3000` Hypothesis finds this case every time:
-
-```
-closes=[80, 80, 88, 80, 80, 80, 80, 80],
-factors=['2', '2', '0.98', '0.98', '0.98', '2', '2'],
-AssertionError: assert Decimal('63') == Decimal('62')   # PIT volume vs expected
-```
-
-**Cause.** A `SPLIT` factor detected from the closes inherits the 0.0001 rounding of the adjusted
-series. For example, it can come out as 1.99998 instead of exactly 2. The PIT volume divides by
-the product of those inexact factors, so `1000 / 16 = 62.5` becomes 62.50x and rounds to 63
-instead of 62. Real splits are exact integer ratios (2:1, 3:2, 1:10, ...), so the volume should be
-divided by the exact ratio. CI would fail at random on this, so it blocks the merge.
-
-**Required change (`src/aitrader/data/adjusted.py`, one implementation used by ingest and PIT):**
-
-1. When a factor is classified `SPLIT`, snap it to the nearest fraction `p/q` with
-   `1 <= p, q <= 100` (for example `fractions.Fraction(factor).limit_denominator(100)`), and check
-   the numerator bound too.
-   - If `abs(p/q / factor - 1) <= RATIO_TOLERANCE`, the action is a `SPLIT` with the exact ratio.
-   - Otherwise reclassify it as `UNEXPLAINED`, so it fails closed when held or pending.
-2. Keep the exact ratio on `CorporateAction`, for example as `split_ratio: tuple[int, int] | None`
-   (`(p, q)`, set only for `SPLIT`). `factor` keeps its meaning; for a `SPLIT` it becomes
-   `Decimal(p) / Decimal(q)`.
-3. Compute the PIT volume with exact integer arithmetic: `raw_volume * prod(q) / prod(p)` over
-   the `SPLIT` actions after the bar, then round to a whole share with ROUND_HALF_EVEN, for
-   example with `Fraction` and then `Decimal`. Prices use the snapped factor for splits and the
-   detected factor for distributions, as before.
-4. Add the failing case above to the property test as a `@hypothesis.example(...)`. Add unit tests
-   for the snap: a 2:1 split detected as 0.50001 gives `(1, 2)`; a 1:10 reverse split gives
-   `(10, 1)`; a 3:2 split gives `(2, 3)`; a factor such as 0.6180 with no fraction within tolerance
-   becomes `UNEXPLAINED`. Do not lower `max_examples` and do not relax any assertion.
-5. `fetch_report.json` keeps its format; a reclassified action shows as `"unexplained"`.
-
-Not required in this round (keep out of scope):
-
-- the `ResourceWarning` in `test_storage.py`, which is a separate follow-up;
-- splits in the buy-and-hold benchmark;
-- the cost of rebuilding the cached series per action.
-
-Acceptance: all criteria of TASK-007a still hold. The new tests pass, and the property test passes
-with a temporary local run at `max_examples=3000` (report the command and result; do not commit
-that change). Update `.ai/LAST_REPORT.md` with a "Review round 1" section.
-
-### Review round 1, finding 2 (CI on `ec88c5a`) — also required
-
-CI fails on `ec88c5a` deterministically:
-`FileNotFoundError: [Errno 2] No such file or directory: '.pytest_cache/tmpvg2yk2ey'`.
-The cause is that `test_no_lookahead_across_vendor_download_dates` creates its files with
-`TemporaryDirectory(dir=".pytest_cache")`, and a fresh checkout has no `.pytest_cache` (CI does
-not use the pytest cache). Use a location that always exists. Either take `tmp_path_factory`
-(session-scoped, so Hypothesis allows it) and call `mktemp()` per example, or use
-`TemporaryDirectory()` with no `dir`. Do not depend on the current directory. Check this locally
-from a clean state: `rm -rf .pytest_cache && uv run pytest -p no:cacheprovider tests/unit/data`.
-
-### Review round 1, correction to finding 1 step 1 (designer) — replaces the snap rule
-
-The operator and Codex were right: with `p, q <= 100`, fractions are so dense that almost any
-factor (0.6180 snaps to 55/89) falls within `RATIO_TOLERANCE`, so `UNEXPLAINED` could never
-happen. Use this rule instead. Real splits are `n:1`, `1:n` or small ratios such as 3:2.
-
-- **Allowed split ratios:** `n/1` and `1/n` for `2 <= n <= 100`, plus `p/q` for `1 <= p, q <= 10`.
-- A factor classified `SPLIT` snaps to the allowed ratio whose relative difference
-  `abs(ratio / factor - 1)` is at most `RATIO_TOLERANCE`. No two allowed ratios are that close to
-  each other, so the match is unique. If no allowed ratio is within the tolerance, the action is
-  `UNEXPLAINED`.
-- Required tests (designer-checked values): `0.50001 -> (1, 2)`, `10 -> (10, 1)`,
-  `0.66667 -> (2, 3)`, `1.5 -> (3, 2)`, `0.04 -> (1, 25)`; `0.6180` and `0.7310 -> UNEXPLAINED`.
-
-Everything else in finding 1 (steps 2 to 5) and finding 2 is unchanged.
