@@ -24,7 +24,8 @@ in this build.
 | TASK-007c | Research report on real data | done: `docs/research/2026-10-24-p2-walkforward.md`; S1 and S2 no-go for LIVE |
 | TASK-011 | Free-plan daily data fetch, commit lookup, SQLite warning | done (Codex cycle 3, PR #5) |
 | TASK-008 | Webull adapter (sandbox only) on the official SDK, contract tests, sandbox check | done (Codex cycle 4, review rounds 1–7, PR #6; owner approved the protected path) |
-| TASK-012 | S1 v1.1 research support: cash proxy, research-only risk override, deflated Sharpe | **in progress** (Codex cycle 5) |
+| TASK-012 | S1 v1.1 research support: cash proxy, research-only risk override, deflated Sharpe | done (Codex cycle 5, PR #7) |
+| S1 v1.1 research | Four declared families on real data | done: `docs/research/2026-10-24-s1-v1.1-results.md`; no family passes, S1 stays at 1.0.0 |
 
 All of the above up to TASK-010 is on `main`: pull request
 [Kei-Takamizawa/AI-Trader#1](https://github.com/Kei-Takamizawa/AI-Trader/pull/1) was merged on
@@ -70,10 +71,11 @@ as the reference strategy, and research S1 1.1 in parallel.
 2. Done (TASK-008, PR #6): sandbox-only Webull adapter on `webull-openapi-python-sdk==3.0.4`,
    broker contract tests and `aitrader sandbox check`. On 2026-10-24, a real sandbox run passed 10 of 11 checks
    (document 14 §8.1). The follow-ups are listed under open items.
-3. **S1 1.1 research (cycle 5):** plan declared in `docs/research/2026-10-24-s1-v1.1-plan.md`
-   (C1 cash proxy SHY, C2 risk per trade 1.0% for research only, needs the owner's approval;
-   17 variants in total; pass rules fixed). TASK-012 adds the code; the operator runs the four
-   families after the merge.
+3. Done (cycle 5): S1 1.1 research. TASK-012 (PR #7) added the code; the four declared families
+   ran on 2026-10-24 (C2 approved by the owner for research only). No family passes
+   (`docs/research/2026-10-24-s1-v1.1-results.md`): S1 stays at 1.0.0 as the paper reference,
+   risk per trade stays 0.5%. A new strategy idea needs its own declared plan; first add the
+   neighbour test returns and the cost share to the walk-forward output.
 4. **P3 PAPER:** scheduler, live data adapter, virtual portfolio, reconciliation, kill switch,
    heartbeat, notifications, daily report. Cloud deployment needs the owner's approval to create
    the Google Cloud project `aitrader-paper` (asked at that time).
@@ -87,6 +89,8 @@ as the reference strategy, and research S1 1.1 in parallel.
 
 - `tests/unit/data/test_alpaca.py::test_urllib_transport_against_a_local_server` leaves an
   `HTTPError` unclosed (a `ResourceWarning` under `-W error`); harmless, fix with the next data task.
+- S1 cash-proxy exit reason: a held proxy exited because all slots filled is logged as "outside
+  strategy universe" (cosmetic, from the PR #7 review). Fix with the next strategy task.
 - `pyproject.toml` pins `build_system.requires = ["uv-build>=0.11.0,<0.12"]`; uv 0.12.1 on the
   operator Mac warns about it (seen in TASK-008). Raise the bound in a small later task after
   checking the uv-build release notes.
