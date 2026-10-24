@@ -64,7 +64,7 @@ as the reference strategy, and research S1 1.1 in parallel.
 
 1. Done (TASK-011, PR #5): `data fetch` now gets the latest closed session on the free plan
    (verified 2026-10-24: `--end 2026-10-23`, 23 symbols, no missing sessions; raw
-   `6f0b2780…cd8eac`, adjusted `965e8cfa…cd0682`).
+   `6f0b2780…cd8eac`, adjusted `965e8cfa…7a0682`).
 2. **TASK-008 (P3b):** Webull adapter on the pinned official SDK with broker contract tests;
    sandbox runs SB-1 to SB-6 by the operator with the public shared test keys (document 14).
 3. **S1 1.1 research plan:** changes declared before any run, each counted as a variant.
