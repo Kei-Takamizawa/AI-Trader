@@ -358,3 +358,60 @@ two causes. The operator and owner are fixing the first one. This round fixes th
 
 Acceptance criteria 1–8 still apply. AC 2 adds the "initializer not called on a wrong resolved
 host" test; AC 3 adds the token; AC 5 adds C1 and C2.
+
+## Review round 4 (designer, 2026-10-24) — Codex GitHub review findings on d6dcf34
+
+Both findings are real. The first one comes from the fill-ID rule in A, which was a designer
+error. The reviewer's comments are in PR #6 on `parsing.py` lines 226 and 232.
+
+### F1. Cumulative fill snapshots are booked as separate executions (replaces the fill rule in A and round 2 rule 4)
+
+Webull gives only order-level cumulative `filled_quantity` and an average `filled_price`. With
+the old rule (`<client_order_id>:<cumulative qty>`), each poll of a partly filled order returns
+the whole cumulative quantity under a new ID. `OrderManager._book_fill` then books it twice or
+reports "fills exceed the order quantity". New rule:
+
+- `fills_since` reports a fill **only for orders in a terminal state** (`FILLED`, or `CANCELLED`
+  / `FAILED` with `filled_quantity > 0`). It reports exactly one `BrokerFill` per order:
+  - `fill_id = "<client_order_id>:final"`;
+  - quantity = the final `filled_quantity`;
+  - price = `filled_price`;
+  - `ts` = `filled_time_at`, or `place_time_at` if that is absent;
+  - costs from `fees` / `commission` as before.
+- Working orders (`PENDING`, `SUBMITTED`, `PARTIAL_FILLED`) produce no fill.
+  `order_status` still reports their partial `filled_quantity`. `OrderManager._adopt` already
+  keeps such an order active until its fills are booked.
+- **Cursor safety:** the manager advances its cursor to the newest fill `ts`, and a cancelled
+  order's last execution can be older than that. So `fills_since(ts)` queries order history with
+  `start_time = max(ts - 7 days, now - 6 months)`. Do not drop items whose `filled_time_at` is
+  before `ts`; the manager de-duplicates by `fill_id` through the ledger. Keep the 50-page cap.
+  The `ValueError` for `ts` older than 6 months stays.
+
+### F2. Sell fills have no settlement date
+
+`Ledger.record_fill` rejects a sale without `settles_on`.
+
+- `WebullBroker` takes a required `settlement_date: Callable[[date], date]`, as `SimBroker`
+  does. For a `SELL` fill, set `settles_on = settlement_date(<trade date of fill.ts in
+  America/New_York>)`. For a `BUY`, set `None`. Do the time-zone conversion with an existing
+  `aitrader.clock` helper if one exists; otherwise use `zoneinfo` in the adapter.
+- Production wiring (the CLI sandbox check) passes `TradingCalendar().settlement_date`. Tests
+  pass a simple deterministic function.
+
+### Tests
+
+- Contract suite, for both brokers: over the whole life of one order (partial, then final),
+  the union by `fill_id` of every `fills_since(NOW)` result has a total quantity equal to the
+  final `filled_quantity`, and it never exceeds the order quantity at any poll. Replace the
+  current `test_partial_and_final_fills` assertion `first[0].fill.quantity == 0.5`, which assumes
+  incremental fills. The new property must hold for both `SimBroker` (incremental) and Webull
+  (terminal only). This is not a weakening: the property is stricter about over-booking.
+- Integration test: `OrderManager` with `WebullBroker` and the fake transport. Run sync through
+  partial → final for a BUY, then the same for a SELL. Assert exactly one ledger fill per order
+  with the right quantity, no `MISMATCH` event, and the SELL booked with the expected
+  `settles_on`.
+- Cursor test: one order cancelled after a partial fill whose `filled_time_at` is older than
+  another order's later fill is still booked exactly once.
+- A `CANCELLED` order with zero fills produces no fill.
+
+Acceptance criteria 1–8 still apply. AC 1 covers the new contract property.
