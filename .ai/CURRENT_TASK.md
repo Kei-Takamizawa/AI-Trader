@@ -484,3 +484,26 @@ now carries "Observed in the sandbox" notes. Implement these on top of round 5.
 
 Tests for each item use the fake transport with the observed shapes and codes. Acceptance
 criteria 1–8 still apply.
+
+## Review round 7 (designer, 2026-10-24) — Codex GitHub review findings on 8ba028c
+
+Both findings are real (PR #6 comments on `broker.py` lines 359 and 137). Implement them on top of
+round 6.
+
+- **F3. `FAILED` with a partial fill.** A `FAILED` order with `filled_quantity > 0` maps to
+  `OrderStatus.CANCELLED`, not `REJECTED`: `PARTIALLY_FILLED → REJECTED` is not a legal
+  transition (`execution/states.py`), and `PARTIALLY_FILLED → CANCELLED` is. Keep the Webull
+  status and any code in `reject_code` for the record. A `FAILED` order with zero fills stays
+  `REJECTED`. This applies everywhere the status is parsed, including R2's terminal check and
+  `fills_since`. Add a real `OrderManager` integration test: a partial fill, then `FAILED`. The
+  fill is booked once, the record ends `CANCELLED`, and repeated syncs raise no `MISMATCH`.
+- **F4. Pace every limited query.** Every operation that `QueryLimiter` covers (`balance`,
+  `positions`, `detail`, `open`, `history`) waits for its window inside `call()`, using
+  `wait_seconds` and the injected `wait`, before `acquire`. The wait is at most 2 s per call.
+  Remove the separate wait in `_orders`, so there is a single pacing point. `RateLimitedError`
+  then comes only from a real HTTP 429 (or the SDK's rate-limit code). Fix `wait_seconds` so it
+  ignores calls older than the window, as `acquire` does. Add a test: `OrderManager.sync()` with
+  three active orders makes three `order_status` calls without any `RateLimitedError`, and
+  `wait` is called with the expected delay (fake clock; no real sleeping).
+
+Acceptance criteria 1–8 still apply.
