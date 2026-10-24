@@ -1,34 +1,28 @@
-# LAST_REPORT — TASK-008, review round 6
+# LAST_REPORT — TASK-008, review round 7
 
 Status: DONE
 
 ## Summary
-Implemented the seven sandbox findings from review round 6 on top of the committed round-5
-adapter. Both cancellation spellings now map to CANCELLED, unused position fields may be absent,
-and instruments reports capture shape names only while SPY flags remain explicitly unavailable.
-The sandbox check avoids cancelling terminal orders and probes the non-marketable fractional rule
-with 1.5 shares. Submit resolves OPENAPI_REPEAT_REQUEST by client-order-ID lookup without placing
-again; the three observed business codes are classified as known.
+Implemented F3 and F4 on the existing round-6 sandbox adapter. FAILED orders with executed
+quantity now map to CANCELLED, preserving FAILED and any error code in BrokerOrder.reject_code;
+zero-fill failures remain REJECTED. All five limited query operations now pace inside call()
+before acquiring their window, and wait_seconds discards expired calls before calculating a delay.
+Regression tests use fake transports, injected waits and simulated clocks, including the real
+OrderManager and Ledger.
 
-Task / execution: TASK-008, review round 6; owner Mac (Darwin), Python 3.14.7.
+Task / execution: TASK-008, review round 7; owner Mac (Darwin), Python 3.14.7.
 Branch: `claude/project-thread-whk5dv`; starting and final HEAD:
-`5a2aa267fa5a0b026fa307ae2463a81759465edd`.
-The worktree was clean at start. AGENTS.md, CLAUDE.md, the full CURRENT_TASK, project status,
-design index, document 14's sandbox results, the pinned response reference, and relevant existing
-code/tests were read. Installed SDK boundary source was inspected locally. CURRENT_TASK already
-contains all instructions including round 6 and was left unchanged. No other task was started.
+`34c958e9a337926d1773ca9489c0cb761e78e411`.
+The worktree was clean at start. AGENTS.md, CLAUDE.md, CURRENT_TASK (all rounds), project status,
+design index, the response reference and relevant existing code/tests were read. CURRENT_TASK
+already contains the full instructions and was preserved. No next cycle was started.
 
 ## Files changed
 - `.ai/LAST_REPORT.md`
 - `src/aitrader/broker/webull/broker.py`
-- `src/aitrader/broker/webull/check.py`
-- `src/aitrader/broker/webull/known_codes.py`
 - `src/aitrader/broker/webull/parsing.py`
-- `tests/contract/test_brokers.py`
-- `tests/contract/test_sandbox_check.py`
-- `tests/contract/webull_fake.py`
+- `tests/integration/test_webull_fills.py`
 - `tests/unit/broker/test_webull.py`
-- `tests/unit/broker/test_webull_tokens.py`
 
 ## Commands run
 All uv commands used `UV_OFFLINE=true UV_NO_SYNC=true UV_CACHE_DIR=.cache/uv` to prevent
@@ -38,107 +32,95 @@ synchronization/downloads and keep the cache inside the repository. No dependenc
 - `uv run ruff format --check`: PASS, 159 files already formatted.
 - `uv run mypy`: PASS, no issues found in 158 source files.
 - `uv run lint-imports`: PASS, 9 contracts kept, 0 broken; 124 files, 502 dependencies.
-- `uv run pytest --cov=aitrader`: PASS, **1289 passed in 26.71s**.
-- `uv run coverage report --include='src/aitrader/*' --fail-under=90`: PASS, **100%** in
-  every reported module; 4813 statements and 1194 branches, none missed or partially covered.
+- `uv run pytest --cov=aitrader`: PASS, **1308 passed in 30.74s**.
+- `uv run coverage report --include='src/aitrader/*' --fail-under=90`: PASS, **100%** in every
+  reported module; 4823 statements and 1200 branches, none missed or partially covered.
 - `uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir bt-a --start 2023-01-03 --end 2024-12-31`:
-  PASS, run ID `bt-f260d57e34f35a87`.
+  PASS, run ID `bt-628ad003492c7cea`.
 - `uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir bt-b --start 2023-01-03 --end 2024-12-31`:
   PASS, same run ID.
 - `diff -r bt-a bt-b && rm -rf bt-a bt-b`: PASS, exit 0, byte-identical. Both paths were
-  confirmed absent before running; only these newly generated directories were removed.
-- `uv run ruff format`: PASS; formatting applied to the changed files.
-- `uv run pytest tests/contract tests/unit/broker tests/integration/test_webull_fills.py --no-cov -q`:
-  PASS, 269 tests (before the final shape and terminal-state test additions).
+  confirmed absent before running; only the newly generated directories were removed.
+- `uv run ruff format src/aitrader/broker/webull/broker.py src/aitrader/broker/webull/parsing.py tests/unit/broker/test_webull.py tests/integration/test_webull_fills.py`:
+  PASS, 4 files unchanged.
+- `uv run pytest tests/unit/broker/test_webull.py tests/integration/test_webull_fills.py tests/contract --no-cov`:
+  initial run FAIL, 4 failed / 236 passed. The new pacing test incorrectly passed client_order_id
+  to four SDK request types that do not accept it. Corrected the test to supply that parameter
+  only for detail; the subsequent full suite above passes all five parameter cases.
 - `git diff --check`: PASS.
 
 ## Acceptance criteria
-- [x] AC 1, broker contracts — all common cases pass for SimBroker and fake-backed WebullBroker,
-  including the lifetime fill-ID union property. New
-  `test_duplicate_place_race_resolves_by_client_id` passes for both brokers; the Webull case
-  proves the call sequence detail/place/detail/place/detail and returns the existing ack.
-- [x] AC 2, sandbox isolation — existing environment, host allow-list, resolved-host read-back,
-  and initializer-not-called-on-wrong-host tests all pass. No routing or guard was changed.
-- [x] AC 3, secret safety — credential/token log, exception, repr and written-report leak tests
-  pass. Instrument shape names are redacted before observation; body values are not recorded.
-- [x] AC 4, no submit retries — existing single-attempt timeout tests pass. Duplicate recovery
-  performs only a lookup after rejection; `test_repeat_request_without_matching_order_keeps_rejection`
-  proves that a missing order preserves the original known rejection without another place.
-- [x] AC 5, sandbox CLI — fake-backed outcome, report, auth-stop, token-fact and CLI tests pass.
-  In accordance with round 6 item 3, SPY flags now always record fail/unavailable pending a later
-  mapping task, even if the other probes pass. Consequently a complete authenticated sandbox
-  check currently exits 1; missing variables still exit 2. A full-run exit-0 case is no longer
-  reachable while SPY flags deliberately fail. Earlier CLI success expectations were updated
-  to this explicit round-6 requirement, without removing token/result assertions.
-- [x] AC 6, SDK isolation — all 9 import contracts pass, unchanged.
-- [x] AC 7, mandatory checks and coverage — all green, every module remains at 100% statement
+- [x] AC 1, broker contracts — full suite passes for SimBroker and fake-backed WebullBroker,
+  including submit/status/idempotency/cancel, lifetime fill-ID union, known/unknown rejection,
+  submit ambiguity/lookup, auth/rate errors, step/ID validation, mappings and host rejection.
+- [x] AC 2, sandbox isolation — existing host/environment, resolved-host read-back and
+  initializer-not-called-on-wrong-host tests pass. Routing and SDK initialization are unchanged.
+- [x] AC 3, secret safety — existing captured DEBUG logging, exception, repr and report tests,
+  including invented token redaction, pass. Parsing still receives redacted order snapshots.
+- [x] AC 4, no submit retries — existing timeout tests pass, including one transport attempt
+  and lookup of the unknown submit outcome. Submit code is unchanged.
+- [x] AC 5, sandbox CLI — existing fake-transport outcome, token-fact, auth-stop, report and
+  missing-variable tests pass. Round 6's SPY flag check remains fail/unavailable until the
+  instrument shape is mapped in a later task; an otherwise successful full probe exits 1.
+- [x] AC 6, SDK isolation — all 9 import contracts pass without changes.
+- [x] AC 7, required checks and coverage — all pass; every module remains at 100% statement
   and branch coverage.
-- [x] AC 8, fixture reproducibility — recursive diff exits 0 and both run IDs match.
-- [x] Round 6 item 1 — fake cancellation returns observed `CANCELED`; common cancellation
-  contracts pass. `test_only_terminal_nonzero_snapshots_produce_fills` includes both spellings,
-  zero/partial/full quantities, order status and open-orders mapping, and terminal fill delivery.
-- [x] Round 6 item 2 — `test_observed_positions_optional_fields` covers absent, null and empty
-  fields, unchanged cost mapping, and false field-presence findings. Other required position
-  fields and numeric validations remain enforced; unused optional values are ignored.
-- [x] Round 6 item 3 — `test_instrument_shape_names_only_and_flags_unavailable` checks object
-  and array roots, sorted top-level/first-item names, empty lists, non-object list items,
-  missing lists and malformed roots. Synthetic body values never enter the report. The first
-  root-level list is selected without searching later lists if it is empty.
-- [x] Round 6 item 4 — `test_observed_reject_codes_are_known` covers all three observed codes;
-  each table entry includes its meaning and document-14 section-8.1 source link.
-- [x] Round 6 item 5 — `test_whole_terminal_status_never_sends_cancel` covers CANCELED,
-  CANCELLED, FILLED and FAILED; no cancel is sent. Existing cancel-race/failure tests still pass.
-- [x] Round 6 item 6 — `test_observed_cancel_and_fractional_probe_payloads` proves the submitted
-  quantities are 1.00000, 1.50000 and 0.00001 (plus the duplicate whole-share probe), checks the
-  fractional rejection result, and proves only one cancellation for the normal whole-order flow.
-  Unexpectedly accepted fractional probes remain covered by existing cancellation tests.
-- [x] Round 6 item 7 — duplicate-place recovery contract and missing-order regression above
-  pass; place_once remains a single attempt so the operator's duplicate probe still observes
-  the real OPENAPI_REPEAT_REQUEST code.
+- [x] AC 8, fixture reproducibility — both run IDs match and recursive diff exits 0.
+- [x] F3, FAILED after a partial fill —
+  `test_failed_after_partial_fill_is_booked_once_and_cancelled` uses the real manager and ledger:
+  working partial snapshot books nothing; FAILED books exactly 0.1 once, ends CANCELLED, and
+  three repeated syncs return no events or MISMATCH. Existing terminal-snapshot tests cover
+  history, detail and open-order parsing for zero, partial and full quantities.
+- [x] F3, preserved failure reason —
+  `test_failed_status_preserves_reason_and_maps_executed_quantity` covers zero, smallest supported
+  positive step, partial and full quantity, with absent/empty/present codes. reject_code is
+  `FAILED` or `FAILED:<error_code>`; status mapping keeps the real filled quantity.
+- [x] F4, every limited query is paced — `test_limited_calls_wait_before_transport` covers
+  balance, positions, detail, open and history. Three calls make exactly three transport calls,
+  waiting 2 seconds before the third. The separate pagination wait was removed; the existing
+  four-page pacing regression still passes with exactly one 2-second wait.
+- [x] F4, expired calls — `test_wait_seconds_ignores_expired_calls_in_staggered_window` checks
+  staggered timestamps: expired calls do not consume slots or hide the delay of the next active
+  window. Existing threshold tests cover just below, at and just above 2 seconds.
+- [x] F4, manager integration — `test_sync_paces_detail_queries_for_three_active_orders`
+  successfully queries all three IDs with no events or RateLimitedError, keeps all three active,
+  and records exactly one 2-second injected wait. No real sleep is used in these new tests.
 
 ## Expected / Actual and reproduction
-Expected: observed cancellation/position responses parse, already terminal orders are not
-cancelled twice, a duplicate submit can resolve its previous acceptance, and unknown instrument
-shapes produce useful metadata without claiming flags are supported.
-Actual: all offline tests pass, with one cancellation in the normal sandbox probe flow and
-SPY flags explicitly fail/unavailable. The shape tests verify names only and omit synthetic values.
+Expected: a partially executed FAILED order closes through a legal state transition, with no
+lost or duplicate execution; consecutive limited queries wait rather than exposing a local
+rate-limit error to OrderManager.sync(). Actual: both integration regressions pass, all five
+limited operations wait before sending, and remote HTTP/SDK rate-limit error tests still pass.
 
-Reproduce offline:
+Reproduce with the offline environment settings above:
+`uv run pytest tests/unit/broker/test_webull.py tests/integration/test_webull_fills.py tests/contract --no-cov`.
 
-```bash
-UV_OFFLINE=true UV_NO_SYNC=true UV_CACHE_DIR=.cache/uv uv run pytest tests/contract tests/unit/broker tests/integration/test_webull_fills.py --no-cov
-```
-
-GUI verification: NOT_RUN; this task concerns a broker adapter and CLI.
-Errors/warnings: none in final required checks; no failing test run in this cycle.
+GUI verification: NOT_RUN; no GUI behavior is involved.
+Errors/warnings: the initial test-construction error is documented above and fixed. No warnings
+or errors were reported by the final required checks.
 
 ## Deviations from the task or the design
-None. Round 6 supersedes the older expectation of a fully passing sandbox report: instrument
-flags deliberately remain unavailable and cause exit 1 until a later task maps the response.
-The required setup section and document-14 automation note already exist and were preserved.
+None. The old test expecting a local query refusal was replaced by the required pacing test;
+remote refusal and direct limiter threshold guards remain tested. No checks were weakened.
 
-The round-5 accounting assumption remains: fill/cost timestamps use the start-of-poll observation
-time; only settlement uses the execution/placement timestamp converted to America/New_York.
-Working partial quantities remain hidden until terminal. Delayed/repeated history snapshots are
-de-duplicated through their stable :final IDs. This is offline behavior evidence, not a measured
-real-world polling-delay guarantee.
+The round-5 accounting assumption remains unchanged: fill/cost timestamps use the start-of-poll
+observation time, while settlement derives from the execution/placement time in America/New_York.
+Working partial quantities remain hidden until terminal; stable :final IDs prevent rebooking.
+This is offline behavior evidence, not a measured real-world polling-delay guarantee.
 
-SDK logging suppression is unchanged. Logger names in SDK_LOGGERS are:
-`webull`, `webull.core`, `webull.data`, `webull.core.client`, `webull.core.http.response`,
-`webull.core.retry.retry_condition`, `webull.core.auth.signers.app_key_signer`,
-`webull.core.auth.composer.default_signature_composer`,
-`webull.core.http.initializer.client_initializer`,
-`webull.core.http.initializer.token.token_storage`,
-`webull.core.http.initializer.token.token_manager`, `webull.data.internal.quotes_client`,
-`webull.trade.events.signature_composer`, `webull.trade.trade_events_client`.
+SDK logging suppression is unchanged. SDK_LOGGERS still covers webull, webull.core, webull.data,
+webull.core.client, webull.core.http.response, webull.core.retry.retry_condition,
+webull.core.auth.signers.app_key_signer, webull.core.auth.composer.default_signature_composer,
+webull.core.http.initializer.client_initializer, webull.core.http.initializer.token.token_storage,
+webull.core.http.initializer.token.token_manager, webull.data.internal.quotes_client,
+webull.trade.events.signature_composer and webull.trade.trade_events_client.
 
 ## Open issues and questions
-No implementation blocker or new design decision is pending. Instrument response mapping is
-explicitly deferred by round 6; the next operator run can provide names-only shape findings for
-the designer. The meaning of cash/position fields and real fill behavior remain the previously
-recorded assumptions. Owner approval of the Webull protected path is required before merge.
+No new implementation blocker or design decision. Instrument mapping and the existing cash,
+position and observation-time assumptions remain deferred as specified. Owner approval of the
+protected Webull path remains required before merge.
 
 Intentionally NOT_RUN: real sandbox/API calls (operator only), GUI checks, network access,
 credential/token-file inspection, dependency installation, production/LIVE/PAPER routing changes,
 ledger/manager/BrokerPort changes, design-document edits, Git staging/commit/push/branch changes,
-and another cycle. Git operations remain the operator's responsibility under AGENTS.md.
+and another cycle. Git work remains the operator's responsibility under AGENTS.md.

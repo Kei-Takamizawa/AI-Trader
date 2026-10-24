@@ -13,18 +13,68 @@ from tests.contract.webull_fake import ENV, FakeTransport
 from tests.unit.execution.builders import SPY, Harness, decision, harness, intent
 
 
-def setup() -> tuple[Harness, FakeTransport]:
+def setup(wait_delays: list[int] | None = None) -> tuple[Harness, FakeTransport]:
     h = harness()
     fake = FakeTransport(h.clock)
     fake.fractional_accept = True
+
+    def wait(seconds: int) -> None:
+        if wait_delays is not None:
+            wait_delays.append(seconds)
+        h.clock.advance(timedelta(seconds=seconds))
+
     broker = WebullBroker(
         h.clock,
         settlement_date=lambda day: day + timedelta(days=1),
         credentials=SandboxCredentials(ENV),
         transport=fake,
+        wait=wait,
     )
     h.manager = OrderManager(broker, h.gate, h.store, h.ledger, h.clock)
     return h, fake
+
+
+def test_failed_after_partial_fill_is_booked_once_and_cancelled() -> None:
+    h, fake = setup()
+    submitted = h.buy()
+    assert submitted.record is not None
+    cid = submitted.record.client_order_id
+    snapshot(fake, cid, "PARTIAL_FILLED", "0.1")
+    assert h.manager.sync() == []
+    assert h.ledger.entry(f"fill:{cid}:final") is None
+
+    snapshot(fake, cid, "FAILED", "0.1", error_code="OPENAPI_ORDER_CANNOT_OPERATE")
+    events = h.manager.sync()
+    assert not any(event.kind is ExecutionEventKind.MISMATCH for event in events)
+    assert sum(event.kind is ExecutionEventKind.FILL_BOOKED for event in events) == 1
+    record = h.store.get(cid)
+    assert record is not None
+    assert record.status is OrderStatus.CANCELLED
+    assert record.filled_quantity == Decimal("0.1")
+    booked = h.ledger.entry(f"fill:{cid}:final")
+    assert booked is not None
+    assert booked.position_change is not None
+    assert booked.position_change.quantity == Decimal("0.1")
+    for _ in range(3):
+        assert h.manager.sync() == []
+    assert len([entry for entry in h.ledger.entries if entry.entry_id.startswith("fill:")]) == 1
+
+
+def test_sync_paces_detail_queries_for_three_active_orders() -> None:
+    waits: list[int] = []
+    h, fake = setup(waits)
+    ids = []
+    for index in range(3):
+        submitted = h.buy(intent_id=f"active-{index}")
+        assert submitted.record is not None
+        ids.append(submitted.record.client_order_id)
+    h.clock.advance(timedelta(seconds=2))
+    fake.advance = False
+    fake.calls.clear()
+    assert h.manager.sync() == []
+    assert [params["client_order_id"] for op, params in fake.calls if op == "detail"] == ids
+    assert waits == [2]
+    assert len(h.store.active()) == 3
 
 
 def snapshot(fake: FakeTransport, cid: str, status: str, quantity: str, **kw: Any) -> None:

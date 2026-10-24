@@ -56,10 +56,13 @@ class QueryLimiter:
         self._calls: dict[str, deque[datetime]] = defaultdict(deque)
 
     def wait_seconds(self, operation: str) -> int:
+        now = self._clock.now()
         calls = self._calls[operation]
+        while calls and now - calls[0] >= timedelta(seconds=2):
+            calls.popleft()
         if len(calls) < 2:
             return 0
-        remaining = timedelta(seconds=2) - (self._clock.now() - calls[0])
+        remaining = timedelta(seconds=2) - (now - calls[0])
         return max(0, -(-remaining // timedelta(seconds=1)))
 
     def acquire(self, operation: str) -> None:
@@ -134,6 +137,9 @@ class WebullBroker:
     def call(self, operation: str, **params: Any) -> Any:
         """One SDK attempt; the observer receives metadata only, never response bodies."""
         if operation in {"balance", "positions", "detail", "open", "history"}:
+            delay = self._limiter.wait_seconds(operation)
+            if delay:
+                self._wait(delay)
             self._limiter.acquire(operation)
         started = self._clock.now()
         status: int | None = None
@@ -235,9 +241,6 @@ class WebullBroker:
     def _orders(self, operation: str, **params: Any) -> list[dict[str, Any]]:
         orders: list[dict[str, Any]] = []
         for _ in range(50):
-            delay = self._limiter.wait_seconds(operation)
-            if delay:
-                self._wait(delay)
             body = parsing.obj(self.call(operation, **params), operation)
             for raw in parsing.array(body.get("data"), "data"):
                 group = parsing.obj(raw, "data")

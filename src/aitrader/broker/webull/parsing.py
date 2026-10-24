@@ -128,6 +128,14 @@ def order(data: dict[str, Any]) -> BrokerOrder:
         logging.getLogger(__name__).warning("Unknown Webull order status: %s", status)
     filled = number(data, "filled_quantity", optional=True)
     price = number(data, "filled_price", optional=True)
+    mapped_status = STATUSES.get(status, OrderStatus.UNKNOWN)
+    reject_code = None
+    if status == "FAILED":
+        # Preserve the failure reason while allowing already executed shares to be booked.
+        mapped_status = OrderStatus.CANCELLED if filled > 0 else OrderStatus.REJECTED
+        reject_code = status
+        if present(data.get("error_code")):
+            reject_code = f"{status}:{text(data, 'error_code')}"
     try:
         snapshot = BrokerOrder(
             client_order_id=text(data, "client_order_id"),
@@ -137,7 +145,8 @@ def order(data: dict[str, Any]) -> BrokerOrder:
             order_type=_order_type(data),
             quantity=number(data, "total_quantity"),
             limit_price=number(data, "limit_price") if present(data.get("limit_price")) else None,
-            status=STATUSES.get(status, OrderStatus.UNKNOWN),
+            status=mapped_status,
+            reject_code=reject_code,
             filled_quantity=filled,
             average_fill_price=price if filled > 0 and price > 0 else None,
             updated_at=timestamp(

@@ -317,7 +317,12 @@ def test_status_mapping(status: str, caplog: pytest.LogCaptureFixture) -> None:
             filled_time_at="2026-10-24T12:00:01.000Z",
         )
     )
-    assert snapshot.status is parsing.STATUSES.get(status, OrderStatus.UNKNOWN)
+    expected = (
+        OrderStatus.CANCELLED
+        if status == "FAILED"
+        else parsing.STATUSES.get(status, OrderStatus.UNKNOWN)
+    )
+    assert snapshot.status is expected
     working = status in {"PENDING", "SUBMITTED", "PARTIAL_FILLED"}
     assert snapshot.filled_quantity == (Decimal(0) if working else Decimal("0.5"))
     assert snapshot.average_fill_price == (None if working else Decimal(99))
@@ -476,14 +481,46 @@ def test_query_limiter_threshold(delta: timedelta) -> None:
         limiter.acquire("balance")
 
 
-def test_limiter_stops_before_transport() -> None:
-    broker, fake = setup()
+@pytest.mark.parametrize("operation", ["balance", "positions", "detail", "open", "history"])
+def test_limited_calls_wait_before_transport(operation: str) -> None:
+    clock = SimClock(NOW)
+    fake = FakeTransport(clock)
     fake.advance = False
-    broker.account()
-    broker.account()
-    with pytest.raises(RateLimitedError):
-        broker.account()
-    assert len(fake.calls) == 2
+    waits = []
+
+    def wait(seconds: int) -> None:
+        assert len(fake.calls) == 2
+        waits.append(seconds)
+        clock.advance(timedelta(seconds=seconds))
+
+    broker = WebullBroker(
+        clock,
+        settlement_date=lambda day: day,
+        credentials=SandboxCredentials(ENV),
+        transport=fake,
+        wait=wait,
+    )
+    for _ in range(3):
+        params = {"client_order_id": "order-1"} if operation == "detail" else {}
+        broker.call(operation, **params)
+    assert [op for op, _ in fake.calls] == [operation] * 3
+    assert waits == [2]
+
+
+def test_wait_seconds_ignores_expired_calls_in_staggered_window() -> None:
+    clock = SimClock(NOW)
+    limiter = QueryLimiter(clock)
+    limiter.acquire("detail")
+    clock.advance(timedelta(seconds=1))
+    limiter.acquire("detail")
+    clock.advance(timedelta(seconds=1))
+    assert limiter.wait_seconds("detail") == 0
+    limiter.acquire("detail")
+    assert limiter.wait_seconds("detail") == 1
+    clock.advance(timedelta(seconds=1))
+    assert limiter.wait_seconds("detail") == 0
+    limiter.acquire("detail")
+    assert limiter.wait_seconds("detail") == 1
 
 
 def test_request_fields_and_id_validation() -> None:
@@ -724,6 +761,22 @@ def test_only_terminal_nonzero_snapshots_produce_fills(status: str, quantity: st
         assert snapshot.status is OrderStatus.SUBMITTED
         assert snapshot.filled_quantity == 0
         assert snapshot.average_fill_price is None
+
+
+@pytest.mark.parametrize("quantity", ["0", "0.00001", "0.1", "1"])
+@pytest.mark.parametrize("code", [None, "", "OPENAPI_ORDER_CANNOT_OPERATE"])
+def test_failed_status_preserves_reason_and_maps_executed_quantity(
+    quantity: str, code: str | None
+) -> None:
+    data = order_item(
+        status="FAILED", filled_quantity=quantity, filled_price="100", error_code=code
+    )
+    snapshot = parsing.order(data)
+    assert snapshot.status is (
+        OrderStatus.CANCELLED if Decimal(quantity) > 0 else OrderStatus.REJECTED
+    )
+    assert snapshot.filled_quantity == Decimal(quantity)
+    assert snapshot.reject_code == (f"FAILED:{code}" if code else "FAILED")
 
 
 @pytest.mark.parametrize("filled_time", [None, "2026-10-23T00:30:00.000Z"])
