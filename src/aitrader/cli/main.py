@@ -395,6 +395,7 @@ def paper_run(
     status = result.status
     typer.echo(
         f"{status.state} sessions_added={result.sessions_added} "
+        f"strategy={status.strategy_id} "
         f"last_session={status.last_session} equity_usd={status.equity_usd}"
         + (f" reason={status.reason}" if result.exit_code else "")
     )

@@ -199,23 +199,30 @@ sandbox behaviour. SB-4 event streaming and SB-5 market data/fill realism remain
 ## PAPER stage 1
 
 After the latest market session has closed, the operator updates the local bars, then runs
-our virtual portfolio:
+the two separate virtual portfolios:
 
 ```bash
 uv run aitrader data fetch --end YYYY-MM-DD
 uv run aitrader paper run
+uv run aitrader paper run --config config/paper-s3.yaml --state-dir data/paper-s3
 ```
 
-The first command needs the operator's read-only data credentials. The second runs offline
-with S1 1.0.0 and the same daily-bar fill model as BACKTEST. Nothing is scheduled: after missed
+The first command needs the operator's read-only data credentials. The PAPER commands run
+offline with the same daily-bar fill model as BACKTEST.
+S1 1.0.0 is the reference book in `data/paper`; S3 1.0.0 is an observation book in
+`data/paper-s3`. S3 did not pass its declared research rules and is not a LIVE candidate;
+PAPER results cannot promote it to LIVE. Both start on 2026-10-26 with the same simulation
+values and 0.5% risk per trade. Start them after the first closed session on or after that date.
+Running the S3 configuration against `data/paper` is refused by the book identity check
+(exit 6), as is running S1 against the S3 book. Nothing is scheduled: after missed
 days, the next run catches up automatically. Repeating a run with unchanged data adds nothing.
 Use `--through YYYY-MM-DD` to replay through an earlier date; later recorded sessions remain
 intact. `--config`, `--data-dir`, `--state-dir` and `--git-commit` override the default paths
 and source provenance.
 
 `data/paper/paper.db` is the session history. `data/paper/status/latest.json` shows whether the
-book is NOT_STARTED, RUNNING or HALTED, data freshness against the exchange calendar, USD/JPY
-equity, returns, drawdown, positions, pending intents and the SPY buy-and-hold comparison.
+book is NOT_STARTED, RUNNING or HALTED, strategy ID and version, purpose, data freshness against
+the exchange calendar, USD/JPY equity, returns, drawdown, positions, pending intents and the SPY buy-and-hold comparison.
 Returns and drawdown are fractions (0.01 means 1%). The fixed JPY rate is a reporting assumption.
 A short JSON and Markdown report for each new session appears under `data/paper/reports/daily/`;
 existing reports are never rewritten. Fills are modelled, not actual broker executions.
@@ -240,7 +247,8 @@ uv run aitrader walkforward --data-dir data/bars --out-dir results/s3-r1 --strat
 ```
 
 S3-R1's 1.0% risk override is research only, approved by the owner on 2026-10-24.
-Neither family enables S3 in PAPER. `--cash-proxy` is S1 only.
+S3 is available only as the observation book described in [PAPER stage 1](#paper-stage-1).
+`--cash-proxy` is S1 only.
 Walk-forward reports include each selected point's neighbouring test returns and sign stability,
 plus per-fold and combined costs. Single-point S2 has null stability and zero counted folds.
 Combined costs sum the independent fold books; annual cost percentage uses initial capital

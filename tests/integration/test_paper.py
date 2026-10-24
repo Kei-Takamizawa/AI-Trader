@@ -34,7 +34,7 @@ from aitrader.domain import BrokerEnvironment, Mode
 from aitrader.fees import WEBULL_JP, ExecutionAssumptions
 from aitrader.metrics import buy_and_hold, max_drawdown
 from aitrader.storage import SCHEMA, Database, InstanceLockedError, SingleInstanceLock
-from aitrader.strategy import MomentumParams, MomentumStrategy
+from aitrader.strategy import STRATEGIES, MomentumParams, MomentumStrategy
 
 D = Decimal
 REPO = Path(__file__).resolve().parents[2]
@@ -310,7 +310,7 @@ def test_changed_book_needs_new_directory(
             strategy.version = "test-version"
         if change == "id":
             strategy.strategy_id = "TEST"
-        monkeypatch.setattr(runner, "MomentumStrategy", lambda: strategy)
+        monkeypatch.setitem(STRATEGIES, "S1", lambda: strategy)
     before, files = rows(tmp_path), reports(tmp_path)
     result = run_paper(cfg, source, None, tmp_path, END, CLOCK, "new-sha")
     assert result.exit_code == 6
@@ -702,9 +702,13 @@ def test_reports_include_rejections_pending_reasons_and_findings(
             "data_quality": {"SPY": ("DQ-2",)},
         }
     )
-    write_daily(tmp_path, snapshot, D(323))
+    write_daily(
+        tmp_path, snapshot, D(323), strategy_id="S1", strategy_version="1.0.0", purpose="reference"
+    )
     before = reports(tmp_path)
-    write_daily(tmp_path, snapshot, D(323))
+    write_daily(
+        tmp_path, snapshot, D(323), strategy_id="S1", strategy_version="1.0.0", purpose="reference"
+    )
     assert reports(tmp_path) == before
     text = (tmp_path / f"reports/daily/{snapshot.session}.md").read_text()
     assert "DQ-2: missing bar" in text
@@ -731,3 +735,124 @@ def test_new_sessions_rollback_together_on_sqlite_failure(
         run(tmp_path, source)
     assert rows(tmp_path) == before
     assert reports(tmp_path) == files
+
+
+@pytest.mark.parametrize("configured", [False, True])
+def test_s1_book_matches_pre_task_fixture(
+    tmp_path: Path, source: DailyBarSource, configured: bool
+) -> None:
+    cfg = load_settings(Mode.PAPER, REPO / "config", environ={})
+    assert cfg.paper is not None
+    paper = (
+        cfg.paper.model_copy(update={"start": START}) if configured else PaperSettings(start=START)
+    )
+    assert paper.strategy == "S1"
+    assert paper.purpose == "reference"
+    cfg = cfg.model_copy(update={"paper": paper})
+    result = run_paper(cfg, source, None, tmp_path, END, CLOCK, "fixture-sha")
+    assert result.exit_code == 0
+    expected = json.loads((REPO / "tests/fixtures/paper/s1-book.json").read_text())
+    with Database(tmp_path / "paper.db") as db:
+        assert dict(db.query("SELECT * FROM paper_book")[0]) == expected
+
+
+def test_s3_config_and_fixture_parity(tmp_path: Path, source: DailyBarSource) -> None:
+    cfg = load_settings(
+        Mode.PAPER, REPO / "config", environ={}, config_file=REPO / "config/paper-s3.yaml"
+    )
+    reference = load_settings(Mode.PAPER, REPO / "config", environ={})
+    assert cfg.paper is not None
+    assert reference.paper is not None
+    assert cfg.paper.strategy == "S3"
+    assert cfg.paper.purpose == "observation"
+    assert cfg.paper.start == reference.paper.start == date(2026, 10, 26)
+    assert cfg.paper.simulation() == reference.paper.simulation()
+    assert cfg.risk == reference.risk
+    assert cfg.risk.risk_per_trade_pct == D("0.5")
+    paper = cfg.paper.model_copy(update={"start": START})
+    cfg = cfg.model_copy(update={"paper": paper})
+    result = run_paper(cfg, source, None, tmp_path, END, CLOCK, "fixture-sha")
+    assert result.exit_code == 0
+    expected = run_backtest(
+        cfg,
+        STRATEGIES["S3"](),
+        source,
+        start=START,
+        end=END,
+        simulation=paper.simulation(),
+        capture_sessions=True,
+    )
+    recorded = rows(tmp_path)
+    assert [r[1] for r in recorded] == [s.snapshot_json for s in expected.sessions]
+    assert [r[2] for r in recorded] == [s.snapshot_hash for s in expected.sessions]
+    with Database(tmp_path / "paper.db") as db:
+        book = db.query("SELECT * FROM paper_book")[0]
+        assert book["strategy_id"] == "S3"
+        assert book["strategy_version"] == "1.0.0"
+    assert result.sessions_added == len(expected.sessions) > 0
+
+
+@pytest.mark.parametrize("existing", ["S1", "S3"])
+@pytest.mark.parametrize("missing_data", [False, True])
+def test_cli_refuses_other_strategy_without_writing(
+    tmp_path: Path, existing: str, missing_data: bool
+) -> None:
+    cfg, state = make_config(tmp_path), tmp_path / "state"
+    reference = cfg.read_text()
+    observation = (
+        (REPO / "config/paper-s3.yaml").read_text().replace("2026-10-26", START.isoformat())
+    )
+    cfg.write_text(reference if existing == "S1" else observation)
+    first = cli(cfg, state, "--through", FIRST_END.isoformat())
+    assert first.exit_code == 0
+    assert f"strategy={existing}" in first.output
+    before = {str(p.relative_to(state)): p.read_bytes() for p in state.rglob("*") if p.is_file()}
+    cfg.write_text(observation if existing == "S1" else reference)
+    args = ["--data-dir", str(tmp_path / "missing")] if missing_data else []
+    refused = cli(cfg, state, "--through", END.isoformat(), *args)
+    assert refused.exit_code == 6
+    assert "changed book" in refused.output
+    assert "strategy_id" in refused.output
+    assert "new state directory" in refused.output
+    after = {str(p.relative_to(state)): p.read_bytes() for p in state.rglob("*") if p.is_file()}
+    assert after == before
+
+
+@pytest.mark.parametrize("strategy", ["S1", "S3"])
+@pytest.mark.parametrize("purpose", ["reference", "observation"])
+def test_book_metadata_in_status_and_daily_reports(
+    tmp_path: Path, source: DailyBarSource, strategy: str, purpose: str
+) -> None:
+    paper = PaperSettings.model_validate({"start": START, "strategy": strategy, "purpose": purpose})
+    cfg = settings().model_copy(update={"paper": paper})
+    result = run_paper(cfg, source, None, tmp_path, FIRST_END, CLOCK, "test")
+    assert result.exit_code == 0
+    status = json.loads((tmp_path / "status/latest.json").read_text())
+    assert status["strategy_id"] == strategy
+    assert status["strategy_version"] == "1.0.0"
+    assert status["purpose"] == purpose
+    for path in (tmp_path / "reports/daily").glob("*.md"):
+        text = path.read_text()
+        assert f"Strategy: {strategy} 1.0.0. Purpose: {purpose}." in text.splitlines()[:4]
+        observation = (
+            "Observation book: this strategy did not pass its research rules "
+            "and is not a LIVE candidate."
+        )
+        assert (observation in text) == (purpose == "observation")
+        daily = json.loads(path.with_suffix(".json").read_text())
+        assert daily["strategy_id"] == strategy
+        assert daily["strategy_version"] == "1.0.0"
+        assert daily["purpose"] == purpose
+
+
+@pytest.mark.parametrize(
+    ("field", "value"), [("strategy", "S2"), ("strategy", "unknown"), ("purpose", "candidate")]
+)
+def test_cli_unknown_paper_setting(tmp_path: Path, field: str, value: str) -> None:
+    cfg, state = make_config(tmp_path), tmp_path / "state"
+    old = "S1" if field == "strategy" else "reference"
+    cfg.write_text(cfg.read_text().replace(f"{field}: {old}", f"{field}: {value}"))
+    result = cli(cfg, state)
+    assert result.exit_code == 2
+    assert f"paper.{field}" in result.output
+    assert not state.exists()

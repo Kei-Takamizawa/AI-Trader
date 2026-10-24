@@ -91,6 +91,8 @@ class BacktestSettings(SimulationSettings):
 
 class PaperSettings(SimulationSettings):
     start: date
+    strategy: Literal["S1", "S3"] = "S1"
+    purpose: Literal["reference", "observation"] = "reference"
 
 
 class DataSourceSettings(BaseModel):
