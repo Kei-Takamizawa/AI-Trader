@@ -1,7 +1,7 @@
 # P2 research report: walk-forward results for S1 and S2 (TASK-007c)
 
 Date: 2026-10-24. Author: Claude (designer). Runs made by the operator on the owner's Mac.
-Status: **draft for the owner's decision**. These are backtest estimates under the
+Status: **final**; the owner chose the next phase on 2026-10-24 (section 7). These are backtest estimates under the
 assumptions listed below; they do not show that real-money trading would reproduce them
 (document 12 §8).
 
@@ -86,6 +86,12 @@ The hold-out stays locked: no strategy version is frozen for a final test.
    hard caps (needs the owner's approval), or volatility-targeted sizing. Each change must be
    justified before testing, not chosen from results.
 3. **Pause** strategy work and keep the system in research.
+
+**Owner decision (2026-10-24): option 1.** Build the paper-trading path with S1 1.0.0 as the
+reference strategy (no real money), and research S1 1.1 in parallel with changes declared before
+any run. Note on terms: in this design, PAPER is our own virtual portfolio fed with live data
+(phase P3); the Webull Sandbox has only shared public test accounts and is used for adapter
+contract tests (phase P3b), not as a portfolio (document 14, U5).
 
 ## 8. Limitations
 
