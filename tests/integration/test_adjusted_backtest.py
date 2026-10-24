@@ -157,7 +157,14 @@ def test_zero_rounded_gross_is_not_booked(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    ("factor", "kind"), [("0.5", "split"), ("2", "split"), ("1.01", "unexplained")]
+    ("factor", "kind"),
+    [
+        ("0.5", "split"),
+        ("2", "split"),
+        ("1.01", "unexplained"),
+        ("0.6180", "unexplained"),
+        ("0.7310", "unexplained"),
+    ],
 )
 @pytest.mark.parametrize("signal", [SIGNAL, date(2023, 6, 5)])
 def test_held_and_pending_unsupported_actions_fail_closed(

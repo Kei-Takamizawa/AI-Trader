@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 import pytest
-from hypothesis import given, settings
+from hypothesis import example, given, settings
 from hypothesis import strategies as st
 
 from aitrader.data import (
@@ -62,8 +62,11 @@ def test_detection_thresholds_and_ingest_share_one_implementation(
     else:
         (action,) = actions
         assert action.kind == kind
-        assert action.factor == f
-        assert report == [(DAYS[1], kind, f)]
+        if kind != "split":
+            assert action.split_ratio is None
+        expected_factor = {"0.799999": D("0.8"), "1.200001": D("1.2")}.get(factor, f)
+        assert action.factor == expected_factor
+        assert report == [(DAYS[1], kind, expected_factor)]
         assert action.cash_per_share == (
             (100 * (1 - f)).quantize(D("0.000001"), rounding=ROUND_HALF_EVEN)
             if kind == "distribution"
@@ -71,6 +74,39 @@ def test_detection_thresholds_and_ingest_share_one_implementation(
         )
         if factor == "0.99":
             assert action.cash_per_share == D("1.000000")
+
+
+@pytest.mark.parametrize(
+    ("factor", "ratio"),
+    [
+        ("0.50001", (1, 2)),
+        ("10", (10, 1)),
+        ("0.66667", (2, 3)),
+        ("1.5", (3, 2)),
+        ("0.04", (1, 25)),
+        ("100", (100, 1)),
+        ("0.01", (1, 100)),
+        ("0.6180", None),
+        ("0.7310", None),
+        ("101", None),
+        ("0.0099", None),
+    ],
+)
+def test_split_snaps_only_to_allowed_ratios(factor: str, ratio: tuple[int, int] | None) -> None:
+    raw = [(DAYS[0], D(100)), (DAYS[1], D(100) * D(factor))]
+    adjusted = [(DAYS[0], D(100)), (DAYS[1], D(100))]
+    (action,) = detect_corporate_actions("SPY", raw, adjusted)
+    assert action.split_ratio == ratio
+    assert action.cash_per_share == 0
+    if ratio is None:
+        assert action.kind == "unexplained"
+        assert action.factor == D(factor)
+    else:
+        assert action.kind == "split"
+        assert action.factor == D(ratio[0]) / D(ratio[1])
+    assert corporate_actions(
+        [row(d, str(c)) for d, c in raw], [row(d, str(c)) for d, c in adjusted]
+    ) == [(DAYS[1], action.kind.value, action.factor)]
 
 
 def test_history_boundaries_and_cache(tmp_path: Path) -> None:
@@ -138,6 +174,10 @@ def test_missing_symbol_with_empty_series(tmp_path: Path) -> None:
 
 
 @settings(max_examples=60, deadline=None)
+@example(
+    closes=[80, 80, 88, 80, 80, 80, 80, 80],
+    factors=["2", "2", "0.98", "0.98", "0.98", "2", "2"],
+)
 @given(
     closes=st.lists(st.integers(80, 200), min_size=8, max_size=8),
     factors=st.lists(st.sampled_from(["1", "0.98", "0.99", "0.5", "2"]), min_size=7, max_size=7),
@@ -150,7 +190,7 @@ def test_no_lookahead_across_vendor_download_dates(
     events = {day: D(factor) for day, factor in zip(days[1:], factors, strict=True)}
     prices = [D(c) for c in closes]
     # Test every possible cutoff, including dates before any action and after the last.
-    with TemporaryDirectory(dir=".pytest_cache") as directory:
+    with TemporaryDirectory() as directory:
         root = Path(directory)
         raw, adjusted = sources(root / "full", days, prices, events, volume=D(1000))
         full = PointInTimeBars(raw, adjusted)
@@ -201,6 +241,22 @@ def test_actions_on_sorted_and_split_volume_half_even(tmp_path: Path) -> None:
     pit = PointInTimeBars(raw, adjusted)
     assert [a.symbol for a in pit.actions_on(DAYS[1])] == ["QQQ", "SPY"]
     assert pit.history("SPY", CAL.session_close(DAYS[1]))[0].volume == D(500_000)
+
+
+@pytest.mark.parametrize(("volume", "expected"), [(1, 2), (3, 4), (5, 8), (7, 10)])
+def test_nonterminating_split_ratio_rounds_volume_exactly(
+    tmp_path: Path, volume: int, expected: int
+) -> None:
+    raw, adjusted = sources(
+        tmp_path,
+        DAYS[:2],
+        [D(100)] * 2,
+        {DAYS[1]: D(2) / 3},
+        volume=D(volume),
+    )
+    pit = PointInTimeBars(raw, adjusted)
+    assert pit.actions("SPY")[0].split_ratio == (2, 3)
+    assert pit.history("SPY", CAL.session_close(DAYS[1]))[0].volume == D(expected)
 
 
 @pytest.mark.parametrize(("close", "cash"), [("100.00005", "1.000000"), ("100.00015", "1.000002")])

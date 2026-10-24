@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from datetime import date, datetime
 from decimal import ROUND_HALF_EVEN, Decimal
 from enum import StrEnum
+from fractions import Fraction
 from itertools import zip_longest
 
 from pydantic import BaseModel, ConfigDict
@@ -15,6 +16,13 @@ from aitrader.domain.types import NonNegativeDecimal, PositiveDecimal
 
 RATIO_TOLERANCE = Decimal("0.0005")
 SPLIT_THRESHOLD = Decimal("0.2")
+_SPLIT_RATIOS = tuple(
+    sorted(
+        {Fraction(n, 1) for n in range(2, 101)}
+        | {Fraction(1, n) for n in range(2, 101)}
+        | {Fraction(p, q) for p in range(1, 11) for q in range(1, 11)}
+    )
+)
 
 
 class CorporateActionKind(StrEnum):
@@ -31,6 +39,7 @@ class CorporateAction(BaseModel):
     kind: CorporateActionKind
     factor: PositiveDecimal
     cash_per_share: NonNegativeDecimal = Decimal(0)
+    split_ratio: tuple[int, int] | None = None
 
 
 class CorporateActionError(DataError):
@@ -55,8 +64,25 @@ def detect_corporate_actions(
         if previous_ratio is not None:
             factor = ratio / previous_ratio
             if abs(factor - 1) > RATIO_TOLERANCE:
+                split_ratio = None
                 if abs(factor - 1) > SPLIT_THRESHOLD:
-                    kind = CorporateActionKind.SPLIT
+                    # Vendor price rounding must not turn exact share ratios into drift.
+                    detected_ratio = Fraction(factor)
+                    tolerance = Fraction(RATIO_TOLERANCE)
+                    match = next(
+                        (
+                            candidate
+                            for candidate in _SPLIT_RATIOS
+                            if abs(candidate / detected_ratio - 1) <= tolerance
+                        ),
+                        None,
+                    )
+                    if match is None:
+                        kind = CorporateActionKind.UNEXPLAINED
+                    else:
+                        kind = CorporateActionKind.SPLIT
+                        split_ratio = (match.numerator, match.denominator)
+                        factor = Decimal(match.numerator) / Decimal(match.denominator)
                 elif factor < 1:
                     kind = CorporateActionKind.DISTRIBUTION
                 else:
@@ -75,6 +101,7 @@ def detect_corporate_actions(
                         kind=kind,
                         factor=factor,
                         cash_per_share=cash,
+                        split_ratio=split_ratio,
                     )
                 )
         previous_ratio, previous_close = ratio, close
@@ -133,15 +160,17 @@ class PointInTimeBars:
         key = (symbol, count)
         if key not in self._cache:
             active = events[:count]
-            price_factor = split_factor = Decimal(1)
+            price_factor = Decimal(1)
+            split_volume_multiplier = Fraction(1)
             index = len(active) - 1
             scaled = []
             for bar in reversed(self._raw.bars(symbol)):
                 while index >= 0 and bar.ts.date() < active[index].session:
                     event = active[index]
                     price_factor *= event.factor
-                    if event.kind is CorporateActionKind.SPLIT:
-                        split_factor *= event.factor
+                    if event.split_ratio is not None:
+                        p, q = event.split_ratio
+                        split_volume_multiplier *= Fraction(q, p)
                     index -= 1
                 if bar.ts.date() >= active[-1].session:
                     scaled.append(bar)
@@ -155,8 +184,10 @@ class PointInTimeBars:
                                     )
                                     for name in ("open", "high", "low", "close")
                                 },
-                                "volume": (bar.volume / split_factor).quantize(
-                                    Decimal(1), rounding=ROUND_HALF_EVEN
+                                # Fraction.__round__ applies ties-to-even exactly, including
+                                # products of nonterminating ratios such as 2/3.
+                                "volume": Decimal(
+                                    round(Fraction(bar.volume) * split_volume_multiplier)
                                 ),
                             }
                         )
