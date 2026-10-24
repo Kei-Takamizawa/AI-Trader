@@ -174,6 +174,8 @@ One run of `aitrader sandbox check` against `jp-openapi-alb.uat.webullbroker.com
 | SB-3 | A duplicate `client_order_id` is rejected with 417 `OPENAPI_REPEAT_REQUEST`; an unknown `client_order_id` returns 200 with no order. |
 | Latency | 250–630 ms per call; cancel 1.6 s; first call including token set-up about 1.9 s. |
 
+Third run (adapter at b21ae68, Saturday 2026-10-24): 10 of 11 checks pass. The whole-share LIMIT order is accepted on a non-trading day and cancelled (status `CANCELED`, no second cancel). The fractional 1.5-share LIMIT at USD 1.00 is rejected with 417 `OPENAPI_NO_TRADING_DAY`, so the marketable-limit rule for fractional orders is **still unverified** (re-run on a trading day). The instruments call returns an object whose only key is `data`, with no item objects, for `symbols=SPY`; the request parameters or the shape need a follow-up.
+
 ## 9. Sources (accessed 2026-10-23)
 
 Webull Securities Japan website:

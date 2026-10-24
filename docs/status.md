@@ -76,6 +76,11 @@ as the reference strategy, and research S1 1.1 in parallel.
 
 ## Open items
 
+- **Webull sandbox follow-ups (TASK-008):** (1) instruments returns `{"data": ...}` with no items
+  for SPY, so map the real shape or fix the request; (2) re-run `aitrader sandbox check` on a US
+  trading day to verify the fractional marketable-limit rule (it was rejected with
+  `OPENAPI_NO_TRADING_DAY` on a Saturday); (3) U16 and U17 assumptions must be verified before LIVE.
+
 - `tests/unit/data/test_alpaca.py::test_urllib_transport_against_a_local_server` leaves an
   `HTTPError` unclosed (a `ResourceWarning` under `-W error`); harmless, fix with the next data task.
 - `pyproject.toml` pins `build_system.requires = ["uv-build>=0.11.0,<0.12"]`; uv 0.12.1 on the
