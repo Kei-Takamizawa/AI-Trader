@@ -26,7 +26,8 @@ in this build.
 | TASK-008 | Webull adapter (sandbox only) on the official SDK, contract tests, sandbox check | done (Codex cycle 4, review rounds 1–7, PR #6; owner approved the protected path) |
 | TASK-012 | S1 v1.1 research support: cash proxy, research-only risk override, deflated Sharpe | done (Codex cycle 5, PR #7) |
 | S1 v1.1 research | Four declared families on real data | done: `docs/research/2026-10-24-s1-v1.1-results.md`; no family passes, S1 stays at 1.0.0 |
-| TASK-013 | PAPER stage 1: local daily runner verified by replay (document 04 §11) | **in progress** (Codex cycle 6) |
+| TASK-013 | PAPER stage 1: local daily runner verified by replay (document 04 §11) | done (Codex cycle 6, PR #9) |
+| TASK-014 | Strategy S3 (plan `docs/research/2026-10-24-s3-plan.md`), neighbour stability, cost share, faster backtests | **in progress** (Codex cycle 7) |
 
 All of the above up to TASK-010 is on `main`: pull request
 [Kei-Takamizawa/AI-Trader#1](https://github.com/Kei-Takamizawa/AI-Trader/pull/1) was merged on
