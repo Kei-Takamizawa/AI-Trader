@@ -1,126 +1,132 @@
-# LAST_REPORT — TASK-008, review round 7
+# LAST_REPORT — TASK-012
 
 Status: DONE
 
 ## Summary
-Implemented F3 and F4 on the existing round-6 sandbox adapter. FAILED orders with executed
-quantity now map to CANCELLED, preserving FAILED and any error code in BrokerOrder.reject_code;
-zero-fill failures remain REJECTED. All five limited query operations now pace inside call()
-before acquiring their window, and wait_seconds discards expired calls before calculating a delay.
-Regression tests use fake transports, injected waits and simulated clocks, including the real
-OrderManager and Ledger.
 
-Task / execution: TASK-008, review round 7; owner Mac (Darwin), Python 3.14.7.
-Branch: `claude/project-thread-whk5dv`; starting and final HEAD:
-`34c958e9a337926d1773ca9489c0cb761e78e411`.
-The worktree was clean at start. AGENTS.md, CLAUDE.md, CURRENT_TASK (all rounds), project status,
-design index, the response reference and relevant existing code/tests were read. CURRENT_TASK
-already contains the full instructions and was preserved. No next cycle was started.
+Implemented S1 cash-proxy slots, BACKTEST-only in-memory risk overrides, prior-variant
+accounting, deflated Sharpe, B0 Sharpe and a compact per-fold table. Added offline boundary,
+formula and integration tests and documented all four research families. All 1,333 tests pass;
+every source module retains 100% statement and branch coverage. No protected path or
+configuration file changed, and no real-data research or network request was made.
+
+Task / cycle: TASK-012 / cycle 5. Execution: owner Mac, zsh, repository
+`/Users/harrison/Documents/AI-Trader`. Starting branch: `claude/project-thread-whk5dv`;
+HEAD: `f59eea41267ff499483c23bc71b300072471c218`. Initial working tree was clean.
+The task already existed in `.ai/CURRENT_TASK.md` and was read fully and left intact.
 
 ## Files changed
-- `.ai/LAST_REPORT.md`
-- `src/aitrader/broker/webull/broker.py`
-- `src/aitrader/broker/webull/parsing.py`
-- `tests/integration/test_webull_fills.py`
-- `tests/unit/broker/test_webull.py`
+
+.ai/LAST_REPORT.md
+docs/design/12-backtest-and-evaluation.md
+docs/dev/setup.md
+src/aitrader/backtest/walkforward.py
+src/aitrader/cli/main.py
+src/aitrader/metrics/__init__.py
+src/aitrader/metrics/performance.py
+src/aitrader/strategy/momentum.py
+tests/integration/test_walkforward.py
+tests/unit/metrics/test_performance.py
+tests/unit/strategy/test_momentum.py
 
 ## Commands run
-All uv commands used `UV_OFFLINE=true UV_NO_SYNC=true UV_CACHE_DIR=.cache/uv` to prevent
-synchronization/downloads and keep the cache inside the repository. No dependency was installed.
 
-- `uv run ruff check`: PASS, all checks passed.
-- `uv run ruff format --check`: PASS, 159 files already formatted.
-- `uv run mypy`: PASS, no issues found in 158 source files.
-- `uv run lint-imports`: PASS, 9 contracts kept, 0 broken; 124 files, 502 dependencies.
-- `uv run pytest --cov=aitrader`: PASS, **1308 passed in 30.74s**.
-- `uv run coverage report --include='src/aitrader/*' --fail-under=90`: PASS, **100%** in every
-  reported module; 4823 statements and 1200 branches, none missed or partially covered.
-- `uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir bt-a --start 2023-01-03 --end 2024-12-31`:
-  PASS, run ID `bt-628ad003492c7cea`.
-- `uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir bt-b --start 2023-01-03 --end 2024-12-31`:
-  PASS, same run ID.
-- `diff -r bt-a bt-b && rm -rf bt-a bt-b`: PASS, exit 0, byte-identical. Both paths were
-  confirmed absent before running; only the newly generated directories were removed.
-- `uv run ruff format src/aitrader/broker/webull/broker.py src/aitrader/broker/webull/parsing.py tests/unit/broker/test_webull.py tests/integration/test_webull_fills.py`:
-  PASS, 4 files unchanged.
-- `uv run pytest tests/unit/broker/test_webull.py tests/integration/test_webull_fills.py tests/contract --no-cov`:
-  initial run FAIL, 4 failed / 236 passed. The new pacing test incorrectly passed client_order_id
-  to four SDK request types that do not accept it. Corrected the test to supply that parameter
-  only for detail; the subsequent full suite above passes all five parameter cases.
-- `git diff --check`: PASS.
+All uv commands used `UV_OFFLINE=1 UV_CACHE_DIR=.uv-cache` to forbid downloads and keep
+cache writes inside the repository. No dependency was added.
+
+- `uv run ruff check` — PASS, all checks passed.
+- `uv run ruff format --check` — PASS, 159 files already formatted.
+- `uv run mypy` — PASS, no issues in 158 source files.
+- `uv run lint-imports` — PASS, 9 contracts kept, 0 broken.
+- `uv run pytest --cov=aitrader` — PASS, 1333 passed in 32.83 seconds.
+- `uv run coverage report --include='src/aitrader/*' --fail-under=90` — PASS;
+  4901 statements, 0 missed, 1232 branches, 0 partial; every module 100%.
+- `uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir bt-a --start 2023-01-03 --end 2024-12-31` — PASS.
+- Same backtest with `--out-dir bt-b` — PASS.
+- `diff -r bt-a bt-b` — PASS, exit 0, byte-identical outputs; both run IDs
+  `bt-34fad579455c08af`. The generated directories were removed after comparison.
+- Before editing, saved the same backtest to `.task012-baseline`; compared it after editing:
+  manifest and equity CSV byte-identical; all previous JSON metrics equal. The only new
+  metrics field is `benchmarks.B0_buy_and_hold.sharpe_rf0: "1.1743"`.
+- Offline S1 reference comparison: loaded momentum.py from starting HEAD with `git show`,
+  ran both old/default and new/default S1 on fixture dates 2023-01-03 through 2024-12-31:
+  18 intents, 21 fills and 502 equity points exactly equal.
+- `uv run aitrader walkforward --data-dir tests/fixtures/bars --out-dir .task012-wf-check --start 2023-01-03 --train-months 6 --test-months 3 --holdout-months 3 --cash-proxy QQQ --risk-per-trade-pct 1.0 --prior-variants 5` — PASS, 4 folds;
+  every grid point has `cash_proxy: QQQ`, `risk_override: {risk_per_trade_pct: '1.0'}`,
+  `variants_tried: 4`, `variants_tried_total: 9`, `holdout_used: false`.
+  Chained DSR `0.0095`, per-session Sharpe `0.1188`, B0 Sharpe `2.0637`.
+  These synthetic results exercise code only. SHY is absent from the fixtures; QQQ is the
+  task-authorized substitute. Temporary outputs and implementation scripts were removed.
+- `git diff --check` — PASS.
 
 ## Acceptance criteria
-- [x] AC 1, broker contracts — full suite passes for SimBroker and fake-backed WebullBroker,
-  including submit/status/idempotency/cancel, lifetime fill-ID union, known/unknown rejection,
-  submit ambiguity/lookup, auth/rate errors, step/ID validation, mappings and host rejection.
-- [x] AC 2, sandbox isolation — existing host/environment, resolved-host read-back and
-  initializer-not-called-on-wrong-host tests pass. Routing and SDK initialization are unchanged.
-- [x] AC 3, secret safety — existing captured DEBUG logging, exception, repr and report tests,
-  including invented token redaction, pass. Parsing still receives redacted order snapshots.
-- [x] AC 4, no submit retries — existing timeout tests pass, including one transport attempt
-  and lookup of the unknown submit outcome. Submit code is unchanged.
-- [x] AC 5, sandbox CLI — existing fake-transport outcome, token-fact, auth-stop, report and
-  missing-variable tests pass. Round 6's SPY flag check remains fail/unavailable until the
-  instrument shape is mapped in a later task; an otherwise successful full probe exits 1.
-- [x] AC 6, SDK isolation — all 9 import contracts pass without changes.
-- [x] AC 7, required checks and coverage — all pass; every module remains at 100% statement
-  and branch coverage.
-- [x] AC 8, fixture reproducibility — both run IDs match and recursive diff exits 0.
-- [x] F3, FAILED after a partial fill —
-  `test_failed_after_partial_fill_is_booked_once_and_cancelled` uses the real manager and ledger:
-  working partial snapshot books nothing; FAILED books exactly 0.1 once, ends CANCELLED, and
-  three repeated syncs return no events or MISMATCH. Existing terminal-snapshot tests cover
-  history, detail and open-order parsing for zero, partial and full quantities.
-- [x] F3, preserved failure reason —
-  `test_failed_status_preserves_reason_and_maps_executed_quantity` covers zero, smallest supported
-  positive step, partial and full quantity, with absent/empty/present codes. reject_code is
-  `FAILED` or `FAILED:<error_code>`; status mapping keeps the real filled quantity.
-- [x] F4, every limited query is paced — `test_limited_calls_wait_before_transport` covers
-  balance, positions, detail, open and history. Three calls make exactly three transport calls,
-  waiting 2 seconds before the third. The separate pagination wait was removed; the existing
-  four-page pacing regression still passes with exactly one 2-second wait.
-- [x] F4, expired calls — `test_wait_seconds_ignores_expired_calls_in_staggered_window` checks
-  staggered timestamps: expired calls do not consume slots or hide the delay of the next active
-  window. Existing threshold tests cover just below, at and just above 2 seconds.
-- [x] F4, manager integration — `test_sync_paces_detail_queries_for_three_active_orders`
-  successfully queries all three IDs with no events or RateLimitedError, keeps all three active,
-  and records exactly one 2-second injected wait. No real sleep is used in these new tests.
 
-## Expected / Actual and reproduction
-Expected: a partially executed FAILED order closes through a legal state transition, with no
-lost or duplicate execution; consecutive limited queries wait rather than exposing a local
-rate-limit error to OrderManager.sync(). Actual: both integration regressions pass, all five
-limited operations wait before sending, and remote HTTP/SDK rate-limit error tests still pass.
+- [x] Default behaviour preserved — existing suite passes; default S1 intents/fills/equity
+  equal starting HEAD, and default parameter hash excludes the inactive option. The fixture
+  double run is byte-identical; run ID and manifest are unchanged from before the task.
+  As explicitly required by scope C3, metrics JSON gains B0 Sharpe, so that file has an
+  additive difference from the pre-task output; all its pre-existing values are unchanged.
+- [x] Cash-proxy cases — `test_cash_proxy_empty_slots_and_exit` covers zero, one and three
+  qualifying ETFs; proxy intents target three/two slots, use ATR stops and exit when full.
+  `test_cash_proxy_excluded_from_ranking_and_equivalents` covers exclusion even when held
+  and highest-momentum. Missing/stale bars log the cash decision reason; insufficient ATR,
+  held proxy and nonpositive stops are also tested. Inactive identity/intents are tested.
+- [x] Research options — invalid risk values zero, negative, above cap, NaN, infinity and
+  malformed decimals exit 5. Just above zero, just below cap and exactly cap are accepted;
+  PAPER overrides are refused. Negative prior counts and S2 cash proxies are refused.
+  `test_research_fixture_options_and_summary` verifies manifest fields, unchanged original
+  Settings, all grid points, fold summaries and recomputed unrounded training-score DSR.
+- [x] Fixture research run — command and manifest evidence above, using QQQ in place of SHY.
+- [x] DSR formula — symmetric worked calculation gives `0.6584`; independent asymmetric
+  worked moments give `0.6405`. Tests cover N=1, insufficient samples/scores, zero training
+  variance, zero return stdev, nonpositive root, and lower DSR with more trials.
+  Decimal arithmetic is used except the documented NormalDist CDF/quantile boundary.
+- [x] B0 Sharpe — single-backtest hand calculation checks `11.2250`; walk-forward test
+  recomputes it from the benchmark daily curve.
+- [x] Checks and coverage — all six mandatory checks PASS, every source module 100%.
+- [x] Protected/configuration paths unchanged — `git diff --stat` below; only the explicit
+  TASK-012 addition to document 12 was made in the design directory.
 
-Reproduce with the offline environment settings above:
-`uv run pytest tests/unit/broker/test_webull.py tests/integration/test_webull_fills.py tests/contract --no-cov`.
+Implementation diff stat (excluding this report):
 
-GUI verification: NOT_RUN; no GUI behavior is involved.
-Errors/warnings: the initial test-construction error is documented above and fixed. No warnings
-or errors were reported by the final required checks.
+```text
+ docs/design/12-backtest-and-evaluation.md |   3 +
+ docs/dev/setup.md                         |  31 ++++++++
+ src/aitrader/backtest/walkforward.py      |  96 ++++++++++++++++++++--
+ src/aitrader/cli/main.py                  |  21 ++++-
+ src/aitrader/metrics/__init__.py          |   4 +
+ src/aitrader/metrics/performance.py       |  42 +++++++++-
+ src/aitrader/strategy/momentum.py         |  43 +++++++++-
+ tests/integration/test_walkforward.py     | 128 +++++++++++++++++++++++++++++-
+ tests/unit/metrics/test_performance.py    |  64 +++++++++++++++
+ tests/unit/strategy/test_momentum.py      |  71 ++++++++++++++++-
+ 10 files changed, 487 insertions(+), 16 deletions(-)
+```
 
 ## Deviations from the task or the design
-None. The old test expecting a local query refusal was replaced by the required pacing test;
-remote refusal and direct limiter threshold guards remain tested. No checks were weakened.
 
-The round-5 accounting assumption remains unchanged: fill/cost timestamps use the start-of-poll
-observation time, while settlement derives from the execution/placement time in America/New_York.
-Working partial quantities remain hidden until terminal; stable :final IDs prevent rebooking.
-This is offline behavior evidence, not a measured real-world polling-delay guarantee.
+No product/design deviation. The existing all-fields-affect-hash test needed a type-aware
+extension: the newly added optional None field is changed to SHY rather than adding 1 to
+None. Its hash-change assertion is preserved; no test or check was weakened.
 
-SDK logging suppression is unchanged. SDK_LOGGERS still covers webull, webull.core, webull.data,
-webull.core.client, webull.core.http.response, webull.core.retry.retry_condition,
-webull.core.auth.signers.app_key_signer, webull.core.auth.composer.default_signature_composer,
-webull.core.http.initializer.client_initializer, webull.core.http.initializer.token.token_storage,
-webull.core.http.initializer.token.token_manager, webull.data.internal.quotes_client,
-webull.trade.events.signature_composer and webull.trade.trade_events_client.
+Skewness and non-excess kurtosis use empirical central moments standardized by the empirical
+second moment (documented in code/setup and worked tests); Sharpe and training-score variance
+use sample standard deviation/variance. Undefined training Sharpes are omitted, never replaced
+with zero; fewer than two valid values or zero variance yields null DSR.
+The strategy port returns order intents only: unavailable-proxy reasons are logged at INFO,
+and also used as exit reasons when that proxy is held. No intent is invented for idle cash.
 
 ## Open issues and questions
-No new implementation blocker or design decision. Instrument mapping and the existing cash,
-position and observation-time assumptions remain deferred as specified. Owner approval of the
-protected Webull path remains required before merge.
 
-Intentionally NOT_RUN: real sandbox/API calls (operator only), GUI checks, network access,
-credential/token-file inspection, dependency installation, production/LIVE/PAPER routing changes,
-ledger/manager/BrokerPort changes, design-document edits, Git staging/commit/push/branch changes,
-and another cycle. Git work remains the operator's responsibility under AGENTS.md.
+None requiring a design decision for this implementation.
+Real-data C2 research remains for the operator after owner approval. To report N=17 with a
+four-point grid, pass `--prior-variants 13`; the task's fixture example with 5 records N=9.
+
+GUI verification: NOT_RUN (CLI/pure computation task; no GUI changed).
+Network, real market data, credentials, broker endpoints, LIVE and production deployment:
+intentionally NOT_RUN. Git commit, push, staging and branch changes: intentionally NOT_RUN
+under AGENTS.md; the operator records these changes.
+
+Development-only failures (None arithmetic in the parameter-enumeration test, draft expected
+values/enum case in new tests, and formatting/import checks) were corrected and reverified.
+Final checks have no unresolved error or warning.

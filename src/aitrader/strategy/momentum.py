@@ -1,5 +1,6 @@
 """S1 weekly rotation keeps equivalent holdings stable to avoid needless turnover."""
 
+import logging
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from decimal import Decimal
@@ -7,6 +8,8 @@ from decimal import Decimal
 from aitrader.domain import Currency, IntentPurpose, Money, OrderIntent, Side, make_intent_id
 from aitrader.indicators import atr, sma, total_return
 from aitrader.strategy.base import StrategyContext
+
+logger = logging.getLogger(__name__)
 
 CENT = Decimal("0.01")
 
@@ -45,6 +48,7 @@ class MomentumParams:
     atr_period: int = 20
     atr_stop_multiple: Decimal = Decimal(3)
     target_weight: Decimal = Decimal("0.25")
+    cash_proxy: str | None = None
 
 
 class MomentumStrategy:
@@ -55,7 +59,12 @@ class MomentumStrategy:
         self._params = params or MomentumParams()
 
     def params(self) -> Mapping[str, str]:
-        return {key: str(value) for key, value in asdict(self._params).items()}
+        # Omit the inactive option to preserve the 1.0.0 parameter identity.
+        return {
+            key: str(value)
+            for key, value in asdict(self._params).items()
+            if key != "cash_proxy" or value is not None
+        }
 
     def evaluate(self, ctx: StrategyContext) -> list[OrderIntent]:
         if (
@@ -67,6 +76,8 @@ class MomentumStrategy:
         eligible: dict[str, tuple[Decimal, Decimal]] = {}
         reasons: dict[str, str] = {}
         for symbol in p.symbols:
+            if symbol == p.cash_proxy:
+                continue
             bars = ctx.history.get(symbol, ())
             closes = [b.close for b in bars]
             trend = sma(closes, p.trend_period)
@@ -87,6 +98,23 @@ class MomentumStrategy:
                 representative = (held or members)[0]
                 excluded.update(s for s in members if s != representative)
         selected = [s for s in ranking if s not in excluded][: p.top_n]
+        empty = p.top_n - len(selected)
+        if p.cash_proxy is not None and empty > 0:
+            bars = ctx.history.get(p.cash_proxy, ())
+            volatility = atr(bars, p.atr_period)
+            if not bars or bars[-1].ts.date() != ctx.session:
+                reasons[p.cash_proxy] = (
+                    "cash proxy unavailable: no bars on the session; stay in cash"
+                )
+            elif volatility is None:
+                reasons[p.cash_proxy] = (
+                    "cash proxy unavailable: insufficient ATR history; stay in cash"
+                )
+            else:
+                selected.append(p.cash_proxy)
+                eligible[p.cash_proxy] = (Decimal(0), volatility)
+            if p.cash_proxy in reasons:
+                logger.info("%s: %s", p.cash_proxy, reasons[p.cash_proxy])
         intents: list[OrderIntent] = []
 
         def intent(symbol: str, side: Side, **fields: object) -> OrderIntent:
@@ -135,10 +163,19 @@ class MomentumStrategy:
                     Side.BUY,
                     purpose=IntentPurpose.ENTRY,
                     target_notional=Money.of(
-                        (ctx.equity_usd * p.target_weight).quantize(CENT), Currency.USD
+                        (
+                            ctx.equity_usd
+                            * p.target_weight
+                            * (empty if symbol == p.cash_proxy else 1)
+                        ).quantize(CENT),
+                        Currency.USD,
                     ),
                     stop_price=stop,
-                    reason="weekly momentum rank above the trend average",
+                    reason=(
+                        "cash proxy for empty momentum slots"
+                        if symbol == p.cash_proxy
+                        else "weekly momentum rank above the trend average"
+                    ),
                 )
             )
         return intents

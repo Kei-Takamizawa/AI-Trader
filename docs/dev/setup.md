@@ -104,6 +104,37 @@ fold, the chained test equity curve and its return/risk metrics, and the SPY buy
 benchmark over those same test sessions. `manifest.yaml` records the commit, configuration,
 parameter grid, data snapshots, corporate-action counts and hold-out boundary.
 
+### S1 v1.1 research families (TASK-012)
+
+`--cash-proxy <SYMBOL>` fills empty S1 slots without ranking the proxy (S1 only).
+`--risk-per-trade-pct <Decimal>` overrides only this BACKTEST run's in-memory risk
+settings; it must be greater than zero and no greater than the hard cap (1.0%).
+**C2 runs require the owner's approval** (research plan §1); configuration files stay unchanged.
+`--prior-variants <int>` defaults to zero and must be nonnegative. The manifest records
+`risk_override` (or null), proxy parameters, this grid's `variants_tried`, and
+`variants_tried_total = prior_variants + len(grid)`.
+
+```bash
+# Baseline: five variants were tried before this run.
+uv run aitrader walkforward --data-dir data/bars --out-dir results/v11-baseline --prior-variants 5
+# C1: SHY is the cash proxy.
+uv run aitrader walkforward --data-dir data/bars --out-dir results/v11-c1 --cash-proxy SHY --prior-variants 5
+# C2: run only after owner approval.
+uv run aitrader walkforward --data-dir data/bars --out-dir results/v11-c2 --risk-per-trade-pct 1.0 --prior-variants 5
+# C1+C2: run only after owner approval.
+uv run aitrader walkforward --data-dir data/bars --out-dir results/v11-c1-c2 --cash-proxy SHY --risk-per-trade-pct 1.0 --prior-variants 5
+```
+
+For the declared final comparison with 17 total variants, supply `--prior-variants 13`
+for each four-point grid. The examples above record nine trials, not 17.
+The chained risk summary includes `sharpe_per_session` and `deflated_sharpe` (four-decimal
+strings or null when undefined). DSR uses unrounded training Sharpes for every grid point
+in every fold, sample variance across those scores, and empirical central-moment skewness
+and non-excess kurtosis of chained daily returns. No undefined training Sharpe is replaced
+with zero. B0 includes `sharpe_rf0`; `fold_summary` lists test return, profit factor,
+exposure and the selected top N / skip for each fold. Synthetic fixtures have no SHY;
+use QQQ to exercise the proxy path offline, without drawing investment conclusions.
+
 Both `backtest` and `walkforward` accept `--git-commit <commit>` to record an explicit commit.
 Otherwise they look up HEAD using Git on PATH. If that lookup fails, `backtest` records
 `unknown`; `walkforward` exits with code 4 and asks for `--git-commit`.

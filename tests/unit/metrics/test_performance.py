@@ -3,6 +3,8 @@
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
+import pytest
+
 from aitrader.domain import Bar, Currency, Fill, Money, Side, TradeCost, TradeCostType
 from aitrader.fees import WEBULL_JP, ExecutionAssumptions, FeeSchedule
 from aitrader.metrics import (
@@ -185,6 +187,7 @@ def test_summary_structure_and_values() -> None:
     benchmarks = summary["benchmarks"]
     assert isinstance(benchmarks, dict)
     assert benchmarks["B0_buy_and_hold"]["total_pct"] == "10.0000"
+    assert benchmarks["B0_buy_and_hold"]["sharpe_rf0"] == "11.2250"
 
 
 def test_summary_of_an_empty_run() -> None:
@@ -240,3 +243,64 @@ def test_benchmark_dividends_against_hand_calculation() -> None:
     plain = buy_and_hold(bars, D(1000), fees, assumptions)
     assert plain[1].equity_usd == D(990)
     assert plain == buy_and_hold(bars, D(1000), fees, assumptions, distributions={})
+
+
+def test_deflated_sharpe_worked_symmetric_case() -> None:
+    from statistics import NormalDist
+
+    from aitrader.metrics import deflated_sharpe, sharpe_per_session
+
+    returns = [D("-.01"), D(0), D(".01"), D(".02")]
+    training = [D("-.1"), D(".1")]
+    # mean=.005; sample variance=1/6000; sr=sqrt(.15); g3=0; g4=1.64.
+    # V=.02, N=4; quantiles=.6744897501960817 and 1.3287219496247635.
+    # SR0=sqrt(.02)*((1-gamma)*q1+gamma*q2); root term=1+.64*.15/4.
+    # z=(sqrt(.15)-SR0)*sqrt(3)/sqrt(1.024); Phi(z)=.6584491... .
+    value = deflated_sharpe(returns, training, 4)
+    assert fmt(value, 4) == "0.6584"
+    sr = sharpe_per_session(returns)
+    assert sr is not None
+    normal = NormalDist()
+    gamma = D("0.5772156649")
+    sr0 = D(".02").sqrt() * (
+        (1 - gamma) * D(str(normal.inv_cdf(0.75)))
+        + gamma * D(str(normal.inv_cdf(float(1 - 1 / (D(4) * D(1).exp())))))
+    )
+    closed = normal.cdf(float((sr - sr0) * D(3).sqrt() / D("1.024").sqrt()))
+    assert value == D(str(closed))
+    more = deflated_sharpe(returns, training, 17)
+    assert value is not None
+    assert more is not None
+    assert more < value
+
+
+def test_deflated_sharpe_null_cases() -> None:
+    from aitrader.metrics import deflated_sharpe
+
+    r = [D(".01"), D("-.01"), D(".02")]
+    assert deflated_sharpe(r, [D(0), D(1)], 1) is None
+    assert deflated_sharpe(r, [D(1), D(1)], 4) is None
+    assert deflated_sharpe(r, [D(1)], 4) is None
+    assert deflated_sharpe(r[:2], [D(0), D(1)], 4) is None
+    assert deflated_sharpe([D(0)] * 3, [D(0), D(1)], 4) is None
+
+
+def test_deflated_sharpe_asymmetric_worked_case() -> None:
+    from aitrader.metrics import deflated_sharpe
+
+    # mean=.01; sample variance=.0026/3; sr=.01/sqrt(.0026/3).
+    # m2=.00065, m3=.000009, m4=.000000845: g3=m3/m2^1.5, g4=2.
+    # V=.02, N=4: SR0=.1487926367..., z=.3598..., Phi(z)=.6405072... .
+    assert (
+        fmt(deflated_sharpe([D("-.02"), D(0), D(".01"), D(".05")], [D("-.1"), D(".1")], 4), 4)
+        == "0.6405"
+    )
+
+
+def test_deflated_sharpe_nonpositive_root_guard(monkeypatch: pytest.MonkeyPatch) -> None:
+    import aitrader.metrics.performance as performance
+
+    # For a two-valued sample, Pearson's moment inequality is an equality.
+    # At sr=2/g3 the root term is zero; inject that boundary to isolate the guard.
+    monkeypatch.setattr(performance, "sharpe_per_session", lambda _: 2 * D(2).sqrt())
+    assert performance.deflated_sharpe([D(0), D(0), D(1)], [D(0), D(1)], 4) is None

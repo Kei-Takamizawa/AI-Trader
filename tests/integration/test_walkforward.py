@@ -3,7 +3,7 @@
 import json
 import subprocess
 from collections.abc import Mapping
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 from time import perf_counter
@@ -382,3 +382,129 @@ def test_runner_selects_stub_variants_on_training_only(
     assert all(calls[i][0] is grid[expected] for i in (3, 7))
     assert len({id(c[3]) for c in calls}) == 1
     assert all(c[2] < date(2022, 7, 1) for c in calls)
+
+
+@pytest.mark.parametrize("value", ["0", "-0.0001", "1.0001", "NaN", "Infinity", "abc"])
+def test_cli_rejects_invalid_risk_override(tmp_path: Path, value: str) -> None:
+    result = cli(
+        "walkforward",
+        "--data-dir",
+        "tests/fixtures/bars",
+        "--out-dir",
+        str(tmp_path / "out"),
+        "--risk-per-trade-pct",
+        value,
+    )
+    assert result.exit_code == 5
+    assert "invalid research options" in result.output
+    assert not (tmp_path / "out").exists()
+
+
+@pytest.mark.parametrize(
+    "options", [("--prior-variants", "-1"), ("--strategy", "S2", "--cash-proxy", "SHY")]
+)
+def test_cli_rejects_other_invalid_research_options(
+    tmp_path: Path, options: tuple[str, ...]
+) -> None:
+    result = cli(
+        "walkforward",
+        "--data-dir",
+        "tests/fixtures/bars",
+        "--out-dir",
+        str(tmp_path / "out"),
+        *options,
+    )
+    assert result.exit_code == 5
+
+
+@pytest.mark.parametrize("risk", ["0.0001", "0.9999", "1.0"])
+def test_research_override_is_local_and_backtest_only(risk: str) -> None:
+    from aitrader.backtest.walkforward import validate_research_options
+    from aitrader.domain import Mode
+
+    original = settings()
+    validate_research_options(original, "S1", D(risk), "SHY", 5)
+    assert original.risk.risk_per_trade_pct == D("0.5")
+    with pytest.raises(ValueError, match="BACKTEST"):
+        validate_research_options(
+            original.model_copy(update={"mode": Mode.PAPER}), "S1", D(risk), None, 0
+        )
+    with pytest.raises(ValueError, match="only supported for S1"):
+        variants("S2", "SHY")
+
+
+def test_research_fixture_options_and_summary(tmp_path: Path) -> None:
+    from aitrader.backtest.walkforward import section
+    from aitrader.metrics import daily_returns, deflated_sharpe, fmt, sharpe, sharpe_per_session
+
+    original = settings()
+    source = DailyBarSource(Path("tests/fixtures/bars"), CAL)
+    manifest, report = run_walkforward(
+        original,
+        "S1",
+        source,
+        start=date(2023, 1, 3),
+        train_months=6,
+        test_months=3,
+        holdout_months=3,
+        calendar=CAL,
+        cash_proxy="QQQ",
+        risk_per_trade_pct=D("1.0"),
+        prior_variants=5,
+    )
+    assert original.risk.risk_per_trade_pct == D("0.5")
+    assert manifest["risk_override"] == {"risk_per_trade_pct": "1.0"}
+    assert manifest["variants_tried_total"] == 9
+    assert manifest["variants_tried"] == 4
+    grid = cast(list[dict[str, object]], manifest["grid"])
+    assert all(cast(dict[str, str], v["params"])["cash_proxy"] == "QQQ" for v in grid)
+    effective = original.model_copy(
+        update={"risk": original.risk.model_copy(update={"risk_per_trade_pct": D("1.0")})}
+    )
+    training_scores = []
+    folds = cast(list[dict[str, object]], report["folds"])
+    summaries = cast(list[dict[str, object]], report["fold_summary"])
+    for fold, summary in zip(folds, summaries, strict=True):
+        metrics = cast(dict[str, object], fold["test_metrics"])
+        selected = next(
+            v for v in variants("S1", "QQQ") if params_hash(v) == fold["selected_variant"]
+        )
+        assert summary["selected_grid_point"] == {
+            k: selected.params()[k] for k in ("top_n", "skip")
+        }
+        assert summary["total_pct"] == section(metrics, "returns")["total_pct"]
+        assert summary["profit_factor"] == section(metrics, "trades")["profit_factor"]
+        assert summary["exposure_pct"] == section(metrics, "activity")["exposure_pct"]
+        period = cast(dict[str, str], fold["train"])
+        for variant in variants("S1", "QQQ"):
+            result = run_backtest(
+                effective,
+                variant,
+                source,
+                start=date.fromisoformat(period["start"]),
+                end=date.fromisoformat(period["end_exclusive"]) - timedelta(days=1),
+                calendar=CAL,
+            )
+            score = sharpe_per_session(daily_returns(result.start_equity_usd, result.points))
+            if score is not None:
+                training_scores.append(score)
+    equity = cast(list[dict[str, str]], report["equity"])
+    points = [
+        EquityPoint(date.fromisoformat(p["session"]), D(p["equity_usd"]), D(0)) for p in equity
+    ]
+    combined = cast(dict[str, object], report["combined"])
+    returns = daily_returns(D(323), points)
+    assert section(combined, "risk")["deflated_sharpe"] == fmt(
+        deflated_sharpe(returns, training_scores, 9), 4
+    )
+    assert section(combined, "risk")["sharpe_per_session"] == fmt(sharpe_per_session(returns), 4)
+    benchmark = buy_and_hold(
+        [b for b in source.bars("SPY") if b.ts.date() in {p.session for p in points}],
+        D(323),
+        WEBULL_JP,
+        ExecutionAssumptions(),
+    )
+    assert cast(dict[str, dict[str, str]], combined["benchmarks"])["B0_buy_and_hold"][
+        "sharpe_rf0"
+    ] == fmt(sharpe(daily_returns(D(323), benchmark)), 4)
+    write_walkforward(tmp_path, manifest, report)
