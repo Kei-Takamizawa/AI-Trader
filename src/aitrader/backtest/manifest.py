@@ -11,7 +11,7 @@ import yaml
 
 from aitrader.backtest.engine import BacktestResult
 from aitrader.config import Settings, config_hash
-from aitrader.data import DailyBarSource
+from aitrader.data import CorporateActionKind, DailyBarSource, PointInTimeBars
 from aitrader.fees import WEBULL_JP, ExecutionAssumptions
 from aitrader.metrics import buy_and_hold, fmt, summarize
 from aitrader.strategy import Strategy, params_hash
@@ -29,7 +29,9 @@ def build_manifest(
     git_commit: str,
     variants_tried: int,
     holdout_used: bool = False,
+    adjusted: DailyBarSource | None = None,
 ) -> dict[str, object]:
+    pit = PointInTimeBars(source, adjusted)
     manifest: dict[str, object] = {
         "git_commit": git_commit,
         "config_hash": config_hash(settings),
@@ -39,6 +41,16 @@ def build_manifest(
             "params_hash": params_hash(strategy),
         },
         "data_snapshot_hash": source.snapshot_hash,
+        "signal_data_snapshot_hash": pit.signal_snapshot_hash,
+        "corporate_actions": {
+            kind.value: sum(
+                1
+                for symbol in pit.symbols
+                for action in pit.actions(symbol)
+                if start <= action.session <= end and action.kind is kind
+            )
+            for kind in CorporateActionKind
+        },
         "ai_replay_store_hash": None,
         "period": {
             "start": start.isoformat(),
@@ -73,7 +85,21 @@ def metrics_for(
         prices=prices,
         benchmark_symbol=BENCHMARK,
         benchmark=buy_and_hold(
-            benchmark_bars, result.start_equity_usd, WEBULL_JP, ExecutionAssumptions()
+            benchmark_bars,
+            result.start_equity_usd,
+            WEBULL_JP,
+            ExecutionAssumptions(),
+            distributions={
+                a.session: a.cash_per_share
+                for a in (
+                    result.corporate_actions.actions(BENCHMARK)
+                    if result.corporate_actions is not None
+                    else ()
+                )
+                if a.kind is CorporateActionKind.DISTRIBUTION
+            },
+            dividend_us_withholding_pct=bt.dividend_us_withholding_pct,
+            dividend_jp_withholding_pct=bt.dividend_jp_withholding_pct,
         ),
     )
 

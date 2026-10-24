@@ -146,6 +146,14 @@ class SimBroker:
         self._funding += 1
         self._ledger.deposit(f"fund-{self._funding}", self._clock.now(), amount)
 
+    def credit_dividend(
+        self, entry_id: str, symbol: str, gross: Money, us_withholding: Money, jp_withholding: Money
+    ) -> None:
+        """Credit settled cash on the ex-date; actual dividends are paid later."""
+        self._ledger.record_dividend(
+            entry_id, self._clock.now(), symbol, gross, us_withholding, jp_withholding
+        )
+
     def inject(
         self, operation: SimOperation, fault: SimFault, *, code: str = "", known: bool = True
     ) -> None:

@@ -55,9 +55,19 @@ this command; tests never need the key. It only sends GET requests to `data.alpa
 (rows, missing sessions, large moves, corporate actions, snapshot hashes). `data/` is never
 committed. Exit codes: 2 missing key or invalid universe, 4 data source error (401, 403 = DATA-3).
 
-Backtests on this data need TASK-007a (signals on point-in-time adjusted prices, fills on raw
-prices, dividends booked as cash). Until it is merged, do not use real-data backtest results:
-the adjusted series alone mixes later adjustments into earlier sessions.
+Backtests accept the fetched layout (both `raw/` and `adjusted/` are required):
+
+```bash
+uv run aitrader backtest --data-dir data/bars --out-dir results/s2 \
+  --start 2016-01-04 --end 2024-12-31
+```
+
+Signals use point-in-time adjusted history; fills, participation volumes and equity marks use
+raw prices. Estimated dividends are credited as settled cash on the ex-date (actual pay dates
+are later), after the assumed withholding in `config/backtest.yaml`. Confirm those tax
+assumptions with the broker's documents. Splits and unexplained adjustments fail closed when
+a position is held or an intent is pending. The flat `<SYMBOL>.csv` fixture layout shown above
+still runs without adjustments or dividends.
 
 `config validate` prints the mode, the broker environment and the configuration hash; an invalid
 configuration exits with code 2 and names the offending field.

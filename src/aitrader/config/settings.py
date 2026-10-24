@@ -69,6 +69,9 @@ class BacktestSettings(BaseModel):
     max_participation_pct: PositiveDecimal = Decimal(1)
     """Largest share of a bar's volume one order may fill (document 12 §4)."""
 
+    dividend_us_withholding_pct: Annotated[NonNegativeDecimal, Field(le=100)] = Decimal(10)
+    dividend_jp_withholding_pct: Annotated[NonNegativeDecimal, Field(le=100)] = Decimal("20.315")
+
     @model_validator(mode="after")
     def _check_period(self) -> Self:
         if self.end <= self.start:

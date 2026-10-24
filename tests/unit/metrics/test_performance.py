@@ -207,3 +207,36 @@ def test_summary_of_an_empty_run() -> None:
     costs = summary["costs"]
     assert isinstance(costs, dict)
     assert costs["share_of_gross_pnl_pct"] is None
+
+
+def test_benchmark_dividends_against_hand_calculation() -> None:
+    bars = [
+        Bar(
+            symbol="SPY", ts=T0, open=D(100), high=D(100), low=D(100), close=D(100), volume=D(1000)
+        ),
+        Bar(
+            symbol="SPY",
+            ts=T0 + timedelta(days=1),
+            open=D(99),
+            high=D(99),
+            low=D(99),
+            close=D(99),
+            volume=D(1000),
+        ),
+    ]
+    fees = FeeSchedule(name="no-fees")
+    assumptions = ExecutionAssumptions(slippage_bps_per_side=D(0))
+    curve = buy_and_hold(
+        bars,
+        D(1000),
+        fees,
+        assumptions,
+        distributions={bars[0].ts.date(): D(100), bars[1].ts.date(): D(1)},
+    )
+    # Ten shares: $10 gross, $1 US, ($10-$1)*20.315% = $1.83 JP; $7.17 settled cash.
+    assert curve[0].equity_usd == D(1000)  # no dividend on the initial purchase date
+    assert curve[1].market_value_usd == D(990)
+    assert curve[1].equity_usd == D("997.17")
+    plain = buy_and_hold(bars, D(1000), fees, assumptions)
+    assert plain[1].equity_usd == D(990)
+    assert plain == buy_and_hold(bars, D(1000), fees, assumptions, distributions={})

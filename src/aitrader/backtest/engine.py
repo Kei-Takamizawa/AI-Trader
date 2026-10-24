@@ -17,12 +17,18 @@ Decisions use completed bars only (``DailyBarSource.history`` up to the clock ti
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_EVEN, Decimal
 
 from aitrader.broker.sim import SimBroker
 from aitrader.clock import SimClock, TradingCalendar
 from aitrader.config import Settings
-from aitrader.data import DailyBarSource, DataQualityGate
+from aitrader.data import (
+    CorporateActionError,
+    CorporateActionKind,
+    DailyBarSource,
+    DataQualityGate,
+    PointInTimeBars,
+)
 from aitrader.domain import (
     Currency,
     Fill,
@@ -61,6 +67,7 @@ class BacktestResult:
     cycle: TradingCycle
     broker: SimBroker
     store: InMemoryOrderStore
+    corporate_actions: PointInTimeBars | None = None
     fills: list[FillRecord] = field(default_factory=list)
     intents: list[OrderIntent] = field(default_factory=list)
 
@@ -87,10 +94,13 @@ def run_backtest(
     strategy: Strategy,
     source: DailyBarSource,
     *,
+    adjusted: DailyBarSource | None = None,
     start: date | None = None,
     end: date | None = None,
     calendar: TradingCalendar | None = None,
 ) -> BacktestResult:
+    """Replay raw executions; dividend cash settles on ex-date rather than actual pay date."""
+    pit = PointInTimeBars(source, adjusted)
     bt = settings.require_backtest()
     calendar = calendar or TradingCalendar()
     sessions = calendar.sessions(start or bt.start, end or bt.end)
@@ -130,6 +140,7 @@ def run_backtest(
         cycle=cycle,
         broker=broker,
         store=store,
+        corporate_actions=pit,
     )
     half_spread = bt.half_spread_bps / BPS
     participation = bt.max_participation_pct / HUNDRED
@@ -161,10 +172,46 @@ def run_backtest(
         clock.set(opens)
         broker.settle(session)
         ledger.settle(session, clock.now())
+        for action in pit.actions_on(session):
+            held = ledger.position(action.symbol)
+            if action.kind is not CorporateActionKind.DISTRIBUTION:
+                if held is not None or any(i.symbol == action.symbol for i in pending):
+                    raise CorporateActionError(
+                        f"{action.symbol} {session}: {action.kind.value} factor={action.factor} "
+                        "affects a held position or pending intent"
+                    )
+            elif held is not None:
+                gross = (held.quantity * action.cash_per_share).quantize(
+                    Decimal("0.01"), rounding=ROUND_HALF_EVEN
+                )
+                if gross == 0:
+                    continue
+                us = (gross * bt.dividend_us_withholding_pct / HUNDRED).quantize(
+                    Decimal("0.01"), rounding=ROUND_HALF_EVEN
+                )
+                jp = ((gross - us) * bt.dividend_jp_withholding_pct / HUNDRED).quantize(
+                    Decimal("0.01"), rounding=ROUND_HALF_EVEN
+                )
+                entry_id = f"div-{action.symbol}-{session}"
+                ledger.record_dividend(
+                    entry_id,
+                    clock.now(),
+                    action.symbol,
+                    Money.of(gross, Currency.USD),
+                    Money.of(us, Currency.USD),
+                    Money.of(jp, Currency.USD),
+                )
+                broker.credit_dividend(
+                    entry_id,
+                    action.symbol,
+                    Money.of(gross, Currency.USD),
+                    Money.of(us, Currency.USD),
+                    Money.of(jp, Currency.USD),
+                )
         cycle.begin_session(session, equity)
         today = {s: b for s in source.symbols if (b := source.bar_on(s, session)) is not None}
         volumes = {s: b.volume for s, b in today.items()}
-        histories = {s: source.history(s, clock.now()) for s in source.symbols}
+        histories = {s: pit.history(s, clock.now()) for s in source.symbols}
 
         # 1. stops the open gapped through
         gapped = {s: today[s].open for s in cycle.stops if s in today}
@@ -220,7 +267,7 @@ def run_backtest(
         context = StrategyContext(
             session=session,
             as_of=clock.now(),
-            history={s: source.history(s, clock.now()) for s in source.symbols},
+            history={s: pit.history(s, clock.now()) for s in source.symbols},
             holdings=cycle.holdings(),
             equity_usd=equity,
         )

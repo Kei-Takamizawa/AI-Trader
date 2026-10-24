@@ -21,6 +21,8 @@ Implementation (TASK-005): the fill model is applied by building quotes from eac
 | LLM knowledge leakage | AI overlay not backtested on periods before the model's training cutoff (document 11, section 7) |
 | Calendar errors | Exchange calendar for holidays, half-days and DST |
 
+Implemented in TASK-007a: point-in-time adjusted signals, raw fills and estimated dividends as cash.
+
 ## 3. Walk-forward protocol
 
 ```

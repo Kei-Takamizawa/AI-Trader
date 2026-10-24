@@ -122,6 +122,10 @@ def buy_and_hold(
     capital_usd: Decimal,
     fees: FeeSchedule,
     assumptions: ExecutionAssumptions,
+    *,
+    distributions: Mapping[date, Decimal] | None = None,
+    dividend_us_withholding_pct: Decimal = Decimal(10),
+    dividend_jp_withholding_pct: Decimal = Decimal("20.315"),
 ) -> list[EquityPoint]:
     """Benchmark B0: buy at the first open (plus slippage and fees), hold to the end."""
     if not bars:
@@ -135,14 +139,28 @@ def buy_and_hold(
     ):
         quantity -= step
     cash = capital_usd - quantity * price - total_order_fees(fees, Side.BUY, quantity, price)
-    return [
-        EquityPoint(
-            session=bar.ts.date(),
-            equity_usd=cash + quantity * bar.close,
-            market_value_usd=quantity * bar.close,
+    points = []
+    for index, bar in enumerate(bars):
+        # Bought at this first open: there was no holding at the preceding close.
+        if index > 0 and distributions is not None:
+            gross = (quantity * distributions.get(bar.ts.date(), Decimal(0))).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_EVEN
+            )
+            us = (gross * dividend_us_withholding_pct / HUNDRED).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_EVEN
+            )
+            jp = ((gross - us) * dividend_jp_withholding_pct / HUNDRED).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_EVEN
+            )
+            cash += gross - us - jp
+        points.append(
+            EquityPoint(
+                session=bar.ts.date(),
+                equity_usd=cash + quantity * bar.close,
+                market_value_usd=quantity * bar.close,
+            )
         )
-        for bar in bars
-    ]
+    return points
 
 
 def summarize(
@@ -212,6 +230,8 @@ def summarize(
             "share_of_gross_pnl_pct": fmt(costs_total / gross * HUNDRED, 4) if gross > 0 else None,
         },
         "pnl": {
+            "dividends_gross_usd": fmt(pnl.dividends_usd, 6),
+            "withholding_tax_usd": fmt(pnl.withholding_usd, 6),
             "trading_pnl_usd": fmt(pnl.trading_pnl_usd, 6),
             "trading_pnl_jpy": fmt(pnl.trading_pnl_jpy, 2),
         },

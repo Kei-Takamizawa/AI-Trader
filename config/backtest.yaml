@@ -9,6 +9,11 @@ backtest:
   fx_jpy_per_usd: 155              # fixed rate for JPY caps and reports (assumption)
   half_spread_bps: 1               # liquid ETFs at the open (document 12 section 4)
   max_participation_pct: 1         # of the bar's volume per order
+  # Assumptions: confirm with the broker's tax documents (decision Q9).
+  # US-Japan treaty dividend rate; Japanese income/resident tax in a tokutei
+  # account with withholding.
+  dividend_us_withholding_pct: 10
+  dividend_jp_withholding_pct: 20.315
 
 data:
   provider: csv
