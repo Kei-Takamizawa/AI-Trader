@@ -11,6 +11,7 @@ from typing import Any
 from uuid import uuid4
 
 from aitrader.broker.port import (
+    BrokerAuthError,
     BrokerError,
     BrokerOrder,
     BrokerUnavailableError,
@@ -18,8 +19,74 @@ from aitrader.broker.port import (
     OrderRejectedError,
 )
 from aitrader.broker.webull import WebullBroker, parsing
+from aitrader.broker.webull.sdk import TokenInitializationError
 from aitrader.clock import Clock
 from aitrader.domain import IntentPurpose, OrderRequest, OrderStatus, OrderType, Side
+
+PROBE_NAMES = ("SB-1 accounts", "SB-1 balance", "SB-1 positions", "SB-1 SPY flags")
+ORDER_NAMES = (
+    "SB-2 whole",
+    "SB-2 fractional",
+    "SB-2 below-dollar",
+    "SB-3 duplicate",
+    "SB-3 unknown lookup",
+    "SB-6 host",
+)
+
+
+def skipped_auth(name: str) -> dict[str, Any]:
+    return {
+        "check": name,
+        "outcome": "skipped_auth",
+        "result": "fail",
+        "error_code": None,
+        "latency_ms": "0",
+        "calls": [],
+    }
+
+
+def write_report(
+    out_dir: Path,
+    clock: Clock,
+    host: str,
+    checks: list[dict[str, Any]],
+    calls: list[dict[str, Any]],
+) -> tuple[Path, int]:
+    report = {
+        "date": clock.now().date().isoformat(),
+        "sdk_version": version("webull-openapi-python-sdk"),
+        "host": host,
+        "checks": checks,
+        "calls": calls,
+        "balances_present": any(
+            call["operation"] == "balance" and call["shape"].get("cash_balance", False)
+            for call in calls
+        ),
+    }
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"{report['date']}.json"
+    path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return path, int(any(check["result"] == "fail" for check in checks))
+
+
+def write_auth_failure(
+    out_dir: Path, clock: Clock, host: str, error: TokenInitializationError
+) -> tuple[Path, int]:
+    """Initialization can fail before a broker exists; still leave a safe operator report."""
+    token = {
+        "check": "token",
+        "outcome": "unavailable",
+        "result": "fail",
+        "calls": [],
+        **error.facts,
+    }
+    return write_report(
+        out_dir,
+        clock,
+        host,
+        [token, *(skipped_auth(name) for name in (*PROBE_NAMES, *ORDER_NAMES))],
+        [],
+    )
 
 
 class SandboxCheck:
@@ -32,6 +99,7 @@ class SandboxCheck:
         self.calls: list[dict[str, Any]] = []
         self.checks: list[dict[str, Any]] = []
         self._recorded_calls = 0
+        self._auth_failed = False
 
     def observe(self, event: dict[str, Any]) -> None:
         self.calls.append(event)
@@ -56,11 +124,15 @@ class SandboxCheck:
         )
 
     def _probe(self, name: str, action: Callable[[], Any]) -> None:
+        if self._auth_failed:
+            self.checks.append(skipped_auth(name))
+            return
         try:
             self._call(action)
             self._record(name, "available", "pass")
         except BrokerError as exc:
             self._record(name, "unavailable", "fail", code=exc.code)
+            self._auth_failed = isinstance(exc, BrokerAuthError)
 
     def _accounts(self) -> None:
         rows = parsing.array(self.broker.call("accounts"), "accounts")
@@ -137,10 +209,22 @@ class SandboxCheck:
         return accepted
 
     def run(self, out_dir: Path) -> tuple[Path, int]:
+        self.checks.append(
+            {
+                "check": "token",
+                "outcome": "initialized",
+                "result": "pass",
+                "calls": [],
+                **self.broker.token_facts,
+            }
+        )
         self._probe("SB-1 accounts", self._accounts)
         self._probe("SB-1 balance", self.broker.account)
         self._probe("SB-1 positions", self.broker.positions)
         self._probe("SB-1 SPY flags", self._instrument)
+        if self._auth_failed:
+            self.checks.extend(skipped_auth(name) for name in ORDER_NAMES)
+            return write_report(out_dir, self.clock, self.broker.host, self.checks, self.calls)
         prefix = f"aitsb-{uuid4().hex[:8]}"
         request = OrderRequest(
             client_order_id=f"{prefix}-whole",
@@ -188,18 +272,4 @@ class SandboxCheck:
         self._record(
             "SB-6 host", "answered" if answered else "unavailable", "pass" if answered else "fail"
         )
-        report = {
-            "date": self.clock.now().date().isoformat(),
-            "sdk_version": version("webull-openapi-python-sdk"),
-            "host": self.broker.host,
-            "checks": self.checks,
-            "calls": self.calls,
-            "balances_present": any(
-                call["operation"] == "balance" and call["shape"].get("cash_balance", False)
-                for call in self.calls
-            ),
-        }
-        out_dir.mkdir(parents=True, exist_ok=True)
-        path = out_dir / f"{report['date']}.json"
-        path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        return path, int(any(check["result"] == "fail" for check in self.checks))
+        return write_report(out_dir, self.clock, self.broker.host, self.checks, self.calls)

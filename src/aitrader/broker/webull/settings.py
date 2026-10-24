@@ -32,9 +32,14 @@ class SandboxCredentials:
         self.app_key = SecretStr(env["WEBULL_SANDBOX_APP_KEY"])
         self.app_secret = SecretStr(env["WEBULL_SANDBOX_APP_SECRET"])
         self.account_id = SecretStr(env["WEBULL_SANDBOX_ACCOUNT_ID"])
+        self._tokens: set[SecretStr] = set()
+
+    def add_token(self, token: str) -> None:
+        """Remember tokens in memory only, including ones not yet verified by the SDK."""
+        self._tokens.add(SecretStr(token))
 
     def redact(self, text: str) -> str:
-        for secret in (self.app_key, self.app_secret, self.account_id):
+        for secret in (self.app_key, self.app_secret, self.account_id, *self._tokens):
             text = text.replace(secret.get_secret_value(), "[redacted]")
         return text
 

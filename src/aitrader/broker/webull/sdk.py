@@ -1,10 +1,11 @@
 """Pinned SDK request builders and a single-attempt, sandbox-only HTTP boundary.
 
-TradeClient is deliberately not constructed: its initializer makes additional token/config
-requests. The raw ApiClient and official request classes suffice for sandbox trading without 2FA.
+Use the SDK initializer directly, without TradeClient or a 2FA flow. Its config and token
+requests must pass the same UAT endpoint guard as trading requests.
 """
 
 import logging
+from datetime import timedelta
 from tempfile import TemporaryDirectory
 from typing import Any, Protocol
 
@@ -15,6 +16,9 @@ from webull.core.endpoint.resolver_endpoint_request import (  # type: ignore[imp
 from webull.core.exception.exceptions import (  # type: ignore[import-untyped]
     ClientException,
     ServerException,
+)
+from webull.core.http.initializer.client_initializer import (  # type: ignore[import-untyped]
+    ClientInitializer,
 )
 from webull.data.request.get_instruments_request_v2 import (  # type: ignore[import-untyped]
     GetInstrumentsRequestV2,
@@ -47,7 +51,9 @@ from webull.trade.request.v3.preview_order_request import (  # type: ignore[impo
     PreviewOrderRequest,
 )
 
+from aitrader.broker.port import BrokerAuthError
 from aitrader.broker.webull.settings import SandboxCredentials, validate_host
+from aitrader.clock import Clock
 from aitrader.config.errors import ConfigError
 
 SDK_LOGGERS = (
@@ -86,10 +92,31 @@ class Transport(Protocol):
     def send(self, request: Any) -> Response: ...
 
 
+def unknown_token_facts() -> dict[str, Any]:
+    return {
+        "token_check_enabled": None,
+        "status": None,
+        "expires_present": False,
+        "error_code": None,
+        "http_status": None,
+        "latency_ms": "0",
+    }
+
+
+class TokenInitializationError(BrokerAuthError):
+    """Carry only safe initialization metadata when no broker could be constructed."""
+
+    def __init__(self, facts: dict[str, Any]) -> None:
+        super().__init__("sandbox token initialization refused")
+        self.facts = facts
+        self.code = facts["error_code"]
+        self.http_status = facts["http_status"]
+
+
 class SDKTransport:
     """Keep endpoint resolution and request pinning ahead of every SDK HTTP call."""
 
-    def __init__(self, credentials: SandboxCredentials, endpoint: str) -> None:
+    def __init__(self, credentials: SandboxCredentials, endpoint: str, clock: Clock) -> None:
         host = validate_host(endpoint)
         silence_sdk()
         self._client = ApiClient(
@@ -97,12 +124,68 @@ class SDKTransport:
             credentials.app_secret.get_secret_value(),
             "jp",
             auto_retry=False,
+            token_check_duration_seconds=10,
+            token_check_interval_seconds=5,
         )
         self._client.add_endpoint("jp", host)
         self._check_host(host)
         self._token_dir = TemporaryDirectory(prefix="aitrader-sandbox-")
         self._client.set_token_dir(self._token_dir.name)
         self.host = host
+        self.token_facts = unknown_token_facts()
+        started = clock.now()
+        get_response = self._client.get_response
+
+        def initializing_response(request: Any) -> Response:
+            self._check_host(host)
+            request.set_endpoint(host)
+            response: Response = get_response(request)
+            self.token_facts["http_status"] = response.status_code
+            body = response.json()
+            if isinstance(body, dict):
+                token = body.get("token")
+                if isinstance(token, str) and token:
+                    credentials.add_token(token)
+                if request.get_action_name() == "/openapi/config":
+                    enabled = body.get("token_check_enabled")
+                    if isinstance(enabled, bool):
+                        self.token_facts["token_check_enabled"] = enabled
+                else:
+                    status = body.get("status")
+                    if isinstance(status, str):
+                        self.token_facts["status"] = credentials.redact(status)
+                    self.token_facts["expires_present"] = body.get("expires") not in (None, "")
+                code = body.get("error_code")
+                if isinstance(code, str):
+                    self.token_facts["error_code"] = credentials.redact(code)
+            if response.status_code in {401, 403}:
+                raise TokenInitializationError(self.token_facts)
+            return response
+
+        self._client.get_response = initializing_response
+        try:
+            self._check_host(host)
+            ClientInitializer.initializer(self._client)
+        except (ClientException, ServerException) as exc:
+            self.token_facts["error_code"] = credentials.redact(exc.get_error_code())
+            if isinstance(exc, ServerException):
+                self.token_facts["http_status"] = exc.get_http_status()
+            self.close()
+            raise TokenInitializationError(self.token_facts) from None
+        except OSError, ValueError:
+            self.close()
+            raise TokenInitializationError(self.token_facts) from None
+        except ConfigError, TokenInitializationError:
+            self.close()
+            raise
+        finally:
+            token = self._client.get_token()
+            if isinstance(token, str) and token:
+                credentials.add_token(token)
+            self._client.get_response = get_response
+            self.token_facts["latency_ms"] = str(
+                (clock.now() - started) // timedelta(milliseconds=1)
+            )
 
     def _check_host(self, host: str) -> None:
         resolved = self._client._endpoint_resolver.resolve(ResolveEndpointRequest("jp"))
@@ -143,4 +226,4 @@ def build_request(operation: str, account_id: str, params: dict[str, Any]) -> An
     return request
 
 
-__all__ = ["ApiClient", "ClientException", "ServerException"]
+__all__ = ["ApiClient", "ClientException", "ClientInitializer", "ServerException"]

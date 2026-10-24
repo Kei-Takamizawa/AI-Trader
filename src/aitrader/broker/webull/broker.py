@@ -32,6 +32,7 @@ from aitrader.broker.webull.sdk import (
     Transport,
     build_request,
     silence_sdk,
+    unknown_token_facts,
 )
 from aitrader.broker.webull.settings import (
     SandboxCredentials,
@@ -89,11 +90,15 @@ class WebullBroker:
         self.host = validate_host(self.settings.endpoint)
         silence_sdk()
         self._credentials = credentials or SandboxCredentials()
-        self._transport = transport or SDKTransport(self._credentials, self.host)
+        self._transport = transport or SDKTransport(self._credentials, self.host, clock)
         self._clock = clock
         self._limiter = QueryLimiter(clock)
         self._observe = observe
         self._wait = wait
+
+    @property
+    def token_facts(self) -> dict[str, Any]:
+        return dict(getattr(self._transport, "token_facts", unknown_token_facts()))
 
     def set_observer(self, observe: Callable[[dict[str, Any]], None]) -> None:
         self._observe = observe

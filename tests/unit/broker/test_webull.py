@@ -118,13 +118,13 @@ def test_sdk_resolved_production_host_refused_without_transport(
 
     monkeypatch.setattr(sdk, "ApiClient", broken)
     with pytest.raises(ConfigError, match="resolved trading host"):
-        sdk.SDKTransport(SandboxCredentials(ENV), SANDBOX_HOST)
+        sdk.SDKTransport(SandboxCredentials(ENV), SANDBOX_HOST, SimClock(NOW))
 
 
 def test_real_sdk_client_override_pin_no_retries_and_cleanup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    transport = sdk.SDKTransport(SandboxCredentials(ENV), SANDBOX_HOST.upper())
+    transport = sdk.SDKTransport(SandboxCredentials(ENV), SANDBOX_HOST.upper(), SimClock(NOW))
     token_dir = Path(transport._client.get_token_dir())
     assert token_dir.is_dir()
     assert token_dir.stat().st_mode & 0o777 == 0o700
@@ -656,3 +656,16 @@ def test_documented_rate_limit_code(kind: str) -> None:
     assert caught.value.code == "TOO_MANY_REQUESTS"
     assert "private" not in str(caught.value)
     assert len(fake.calls) == 1
+
+
+@pytest.fixture(autouse=True)
+def sdk_config_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    original = sdk.ApiClient.get_response
+
+    def response(self: Any, request: Any) -> FakeResponse:
+        if request.get_action_name() == "/openapi/config":
+            return FakeResponse({"token_check_enabled": False})
+        result: FakeResponse = original(self, request)
+        return result
+
+    monkeypatch.setattr(sdk.ApiClient, "get_response", response)

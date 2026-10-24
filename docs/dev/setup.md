@@ -148,12 +148,19 @@ production, events and market data hosts, URLs, paths and ports are refused. The
 SDK endpoint resolution before sending, disables SDK retries and SDK logging, and uses a
 private temporary token directory outside the repository. It does not initialize 2FA or use the
 SDK's default `conf/` directory; the temporary directory is cleaned up when the command exits.
+The SDK's own initializer checks token configuration and creates or loads a sandbox token before
+trading calls. Non-NORMAL tokens are checked for at most about 10 seconds, at 5-second intervals;
+no human verification flow is started. Initialization failure or authentication failure during
+SB-1 stops the check: all remaining checks are recorded as `skipped_auth` and exit code is 1.
 
 The command writes `reports/sandbox/<UTC date>.json` (another run on the same date replaces it).
 Use `--out-dir` to choose another report directory and `--config-dir` for another base.yaml.
 The report contains the SDK version, allowed host, per-check outcome and pass/fail/finding,
 per-call HTTP status, error code and latency in milliseconds, documented field presence flags,
 observed order statuses, and balance presence only. It contains no keys, tokens, account numbers,
-raw balances, provider messages or response bodies. Send this report to the designer; offline
-tests establish request construction and mapping, while only this operator run establishes actual
+raw balances, provider messages or response bodies. The `token` check includes only whether token
+checking is enabled (null means unknown), token status, whether expiry was present, HTTP status,
+SDK error code and latency; neither token content nor expiry value is recorded. Send this report
+to the designer; offline tests establish request construction and mapping, while only this operator
+run establishes actual
 sandbox behaviour. SB-4 event streaming and SB-5 market data/fill realism remain out of scope.

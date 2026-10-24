@@ -14,7 +14,8 @@ import typer
 from aitrader.backtest import build_manifest, metrics_for, run_backtest, write_results
 from aitrader.backtest.walkforward import run_walkforward, write_walkforward
 from aitrader.broker.webull import SandboxCredentials, WebullBroker
-from aitrader.broker.webull.check import SandboxCheck
+from aitrader.broker.webull.check import SandboxCheck, write_auth_failure
+from aitrader.broker.webull.sdk import TokenInitializationError
 from aitrader.clock import CalendarError, TradingCalendar, WallClock
 from aitrader.config import (
     ConfigError,
@@ -304,6 +305,10 @@ def sandbox_check(
         settings = load_webull_sandbox_settings(config_dir)
         clock = WallClock()
         broker = WebullBroker(clock, credentials=credentials, settings=settings)
+    except TokenInitializationError as exc:
+        path, exit_code = write_auth_failure(out_dir, clock, settings.endpoint.lower(), exc)
+        typer.echo(f"sandbox report: {path}")
+        raise typer.Exit(exit_code) from None
     except ConfigError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(EXIT_CONFIG_ERROR) from exc
