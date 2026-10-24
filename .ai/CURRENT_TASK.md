@@ -182,3 +182,51 @@ cached per action segment.
   not import the engine, the portfolio or the broker.
 - No real market data in tests or in the repository: build synthetic series in the tests.
 - When done, write `.ai/LAST_REPORT.md` exactly as `AGENTS.md` describes.
+
+## Review round 1 (designer, 2026-10-24) — required change before merge
+
+Commit `ec88c5a` meets most of the spec, but the property test
+`test_no_lookahead_across_vendor_download_dates` fails for some inputs. It failed once in a
+normal full run on Linux, and with `max_examples=3000` Hypothesis finds this case every time:
+
+```
+closes=[80, 80, 88, 80, 80, 80, 80, 80],
+factors=['2', '2', '0.98', '0.98', '0.98', '2', '2'],
+AssertionError: assert Decimal('63') == Decimal('62')   # PIT volume vs expected
+```
+
+**Cause.** A `SPLIT` factor detected from the closes inherits the 0.0001 rounding of the adjusted
+series. For example, it can come out as 1.99998 instead of exactly 2. The PIT volume divides by
+the product of those inexact factors, so `1000 / 16 = 62.5` becomes 62.50x and rounds to 63
+instead of 62. Real splits are exact integer ratios (2:1, 3:2, 1:10, ...), so the volume should be
+divided by the exact ratio. CI would fail at random on this, so it blocks the merge.
+
+**Required change (`src/aitrader/data/adjusted.py`, one implementation used by ingest and PIT):**
+
+1. When a factor is classified `SPLIT`, snap it to the nearest fraction `p/q` with
+   `1 <= p, q <= 100` (for example `fractions.Fraction(factor).limit_denominator(100)`), and check
+   the numerator bound too.
+   - If `abs(p/q / factor - 1) <= RATIO_TOLERANCE`, the action is a `SPLIT` with the exact ratio.
+   - Otherwise reclassify it as `UNEXPLAINED`, so it fails closed when held or pending.
+2. Keep the exact ratio on `CorporateAction`, for example as `split_ratio: tuple[int, int] | None`
+   (`(p, q)`, set only for `SPLIT`). `factor` keeps its meaning; for a `SPLIT` it becomes
+   `Decimal(p) / Decimal(q)`.
+3. Compute the PIT volume with exact integer arithmetic: `raw_volume * prod(q) / prod(p)` over
+   the `SPLIT` actions after the bar, then round to a whole share with ROUND_HALF_EVEN, for
+   example with `Fraction` and then `Decimal`. Prices use the snapped factor for splits and the
+   detected factor for distributions, as before.
+4. Add the failing case above to the property test as a `@hypothesis.example(...)`. Add unit tests
+   for the snap: a 2:1 split detected as 0.50001 gives `(1, 2)`; a 1:10 reverse split gives
+   `(10, 1)`; a 3:2 split gives `(2, 3)`; a factor such as 0.6180 with no fraction within tolerance
+   becomes `UNEXPLAINED`. Do not lower `max_examples` and do not relax any assertion.
+5. `fetch_report.json` keeps its format; a reclassified action shows as `"unexplained"`.
+
+Not required in this round (keep out of scope):
+
+- the `ResourceWarning` in `test_storage.py`, which is a separate follow-up;
+- splits in the buy-and-hold benchmark;
+- the cost of rebuilding the cached series per action.
+
+Acceptance: all criteria of TASK-007a still hold. The new tests pass, and the property test passes
+with a temporary local run at `max_examples=3000` (report the command and result; do not commit
+that change). Update `.ai/LAST_REPORT.md` with a "Review round 1" section.
