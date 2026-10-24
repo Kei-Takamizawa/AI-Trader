@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Lint, types, import rules, tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.32"
+          python-version: "3.14"
+          enable-cache: true
+
+      - name: Install dependencies (locked)
+        run: uv sync --frozen
+
+      - name: Ruff lint
+        run: uv run ruff check
+
+      - name: Ruff format
+        run: uv run ruff format --check
+
+      - name: Mypy (strict)
+        run: uv run mypy
+
+      - name: Import rules
+        run: uv run lint-imports
+
+      - name: Tests with coverage
+        run: uv run pytest --cov=aitrader --cov-report=term-missing
+
+      - name: Coverage gate (>= 90% for every package)
+        run: uv run coverage report --include='src/aitrader/*' --fail-under=90
+
+      - name: CLI smoke test
+        run: |
+          uv run aitrader --version
+          uv run aitrader config validate --mode backtest --config-dir config
+          uv run aitrader config validate --mode paper --config-dir config
+          set +e
+          uv run aitrader live
+          code=$?
+          set -e
+          test "$code" -eq 3
+
+      - name: Backtest smoke test (same inputs give byte-identical results)
+        run: |
+          for run in a b; do
+            uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir "bt-$run" \
+              --start 2023-01-03 --end 2024-12-31 --git-commit "$GITHUB_SHA"
+          done
+          diff -r bt-a bt-b
+          cat bt-a/manifest.yaml

@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+build/
+dist/
+
+# Tool caches
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.hypothesis/
+.import_linter_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Runtime data and state (never committed)
+/data/
+*.db
+*.db-wal
+*.db-shm
+*.db.lock
+
+# Secrets and LIVE configuration (never committed)
+.env
+.env.*
+config/live*.yaml
+!config/live.example.yaml
+
+# Webull SDK token files
+conf/
+**/token.txt
+
+# Backtest output
+/results/
+/bt-*/

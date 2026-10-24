@@ -1,0 +1,26 @@
+# Shared defaults for every mode.
+# Limits are the initial values from docs/design/05-risk-management-spec.md and may only be
+# made stricter; values above the hard caps in src/aitrader/config/hard_caps.py are rejected.
+# Secrets never go into these files: they come only from AITRADER_* environment variables.
+
+risk:
+  risk_per_trade_pct: 0.5          # of equity, fees and slippage included
+  daily_loss_limit_pct: 1.5        # owner decision Q11
+  monthly_soft_loss_pct: 3.0       # risk per trade halved from here
+  monthly_loss_limit_pct: 5.0      # new entries stop; manual resume (Q5)
+  max_drawdown_pct: 10.0           # owner decision Q12
+  max_open_positions: 4
+  max_position_pct_etf: 25
+  max_position_pct_stock: 10
+  max_gross_exposure_pct: 100      # no leverage
+  min_cash_buffer_pct: 5
+  max_portfolio_daily_vol_pct: 1.2
+  max_orders_per_day: 8
+  max_order_adv_pct: 0.1
+  max_cost_share_of_risk_budget_pct: 20
+  approved_capital_jpy: 50000      # sizing never uses more than this (R-LIVE-3)
+  live_max_order_notional_jpy: 30000
+  live_max_total_holdings_jpy: 100000
+
+data:
+  provider: none

@@ -1,0 +1,34 @@
+# Universe U0 (document 11 section 2): liquid US-listed ETFs only, fixed BEFORE any backtest.
+# No leveraged or inverse ETFs, no ETNs, no single stocks. Changing this list after research
+# has started counts as a new strategy variant (document 12 section 2).
+universe: U0
+version: 1
+symbols:
+  # US broad market
+  - SPY    # SPDR S&P 500
+  - IVV    # iShares Core S&P 500
+  - VOO    # Vanguard S&P 500
+  - VTI    # Vanguard Total Stock Market
+  # Growth and size
+  - QQQ    # Invesco QQQ (Nasdaq-100)
+  - IWM    # iShares Russell 2000
+  # US sectors: the eleven Select Sector SPDRs (XLRE from 2015, XLC from 2018)
+  - XLB
+  - XLC
+  - XLE
+  - XLF
+  - XLI
+  - XLK
+  - XLP
+  - XLRE
+  - XLU
+  - XLV
+  - XLY
+  # Defensive and cash proxy
+  - BIL    # 1-3 month T-bills (cash proxy)
+  - SHY    # 1-3 year Treasuries
+  - IEF    # 7-10 year Treasuries
+  - TLT    # 20+ year Treasuries
+  # Real assets
+  - GLD    # SPDR Gold Shares
+  - IAU    # iShares Gold Trust

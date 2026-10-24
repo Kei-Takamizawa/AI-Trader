@@ -1,0 +1,194 @@
+# 11. Strategy Research and AI Analysis Design
+
+## 1. Approach
+
+1. Start with **rule-based** strategies that are simple, well known, have few parameters and trade rarely. They are the baseline.
+2. Add AI only as an **overlay** that can reduce or veto risk, and measure it against the baseline (section 7).
+3. Never let the running system change its own rules. Improvements go through research, review and approval (section 9).
+4. The 1–2% monthly target is a research target, not an assumption. A strategy is judged on risk, stability, reproducibility and cost as much as on return.
+
+## 2. Universe (U0)
+
+Liquid US-listed ETFs only for the first live stage. The list is fixed **before** any backtest to avoid choosing winners after the fact, then filtered by liquidity and by price relative to the maximum position size.
+
+| Group | Examples |
+|---|---|
+| US broad market | S&P 500 trackers (several share-price levels), total-market ETFs |
+| Growth / size | Nasdaq-100 trackers, small-cap index ETFs |
+| US sectors | The eleven Select Sector SPDR ETFs |
+| Defensive / cash proxy | Short-term Treasury ETFs, intermediate and long Treasury ETFs |
+| Real assets | Gold ETFs |
+
+Excluded: leveraged and inverse ETFs, ETNs, single stocks (until a later phase with point-in-time data and earnings handling), anything below USD 5 or with low dollar volume.
+
+## 3. Baseline strategies
+
+Parameters are fixed sets, not optimised per instrument. Walk-forward testing (document 12) selects at most among a small, pre-declared grid.
+
+### S1 — Trend-filtered momentum rotation (weekly)
+
+| Element | Rule |
+|---|---|
+| Signal time | Friday close (or last session of the week) |
+| Ranking | 126-day total return (optionally skipping the last 5 days) |
+| Filter | Only ETFs closing above their 200-day simple moving average |
+| Holdings | Top 2–3 qualifying ETFs, equal risk; if none qualify, hold the cash proxy or cash |
+| Stop | 3 × ATR(20) below entry (typically 3–5% for broad ETFs), tightened only |
+| Exit | Drops out of the top ranks at a weekly review, closes below the 200-day average, or stop hit |
+| Expected trades | A few per month |
+
+### S2 — Pullback in an uptrend (daily)
+
+| Element | Rule |
+|---|---|
+| Instruments | Broad-market ETFs only |
+| Entry | Close above the 200-day average **and** RSI(2) below 10 (short-term pullback) |
+| Exit | Close above the 5-day average, or after 5 sessions |
+| Stop | 2.5 × ATR(20) below entry |
+| Note | Popular rule with documented decay over time and high cost sensitivity; kept as a test of whether a short-term edge survives our cost model. |
+
+### Benchmarks
+
+- **B0:** buy-and-hold of an S&P 500 ETF with the same capital and the same cost model.
+- **B1:** cash (zero return), to show whether trading beats doing nothing after costs.
+
+## 4. Execution rules
+
+- Decisions use completed daily bars only. Orders are sent in the next session's execution window (09:35–10:30 ET).
+- Entries: limit orders at the current quote plus a small collar (for example the mid-price plus max(one tick, 5 bp)), capped at 1% above the previous close. Not filled by the end of the window → cancelled, no chasing.
+- Webull fractional rules shape this (document 14): fractional orders run only in regular hours, and a fractional buy limit must be strictly **above the best ask** (a sell limit strictly below the best bid). So entries are always *marketable* limits — the limit acts as a price cap, never as a resting bid. Buys by amount (`AMOUNT`) must be at least USD 1.
+- Exits: marketable limit orders; if not filled, retried with a wider collar; exits take priority over entries.
+- Protective stops: see document 05, section 9.
+- Alternative to be tested in research: execution near the close (15:45–15:55 ET) on same-day signals. The default stays next-session execution because it is simpler to reproduce in backtests.
+
+## 5. AI analysis pipeline
+
+**Decision (Q6):** the analysis runs **outside the trading system**, as a **Claude Code scheduled task** on the owner's subscription (no extra charge), with **Claude Opus 5.5**. The engine and the task exchange plain files through a **private git data repository**. Neither side can reach the other directly, and the AI side holds no broker or trading credentials.
+
+```mermaid
+flowchart LR
+    subgraph engine["Trading engine (PAPER / LIVE host)"]
+        src["News, filings, macro calendar, earnings dates, price summaries"] --> norm["Normalise + timestamp + hash + sanitise"]
+        norm --> bundle["Input bundle (JSON, only items published before decision time)"]
+        imp["Import + validate advisory (schema, ranges, cited IDs, validity window)"]
+        imp -->|"valid"| store["Advisory store (with provenance)"]
+        imp -->|"invalid, missing or late"| fb["No overlay today (baseline) + log"]
+        store --> map["Deterministic mapping table (versioned with strategy)"]
+        map --> strat["Strategy: veto / size multiplier in [0, 1]"]
+    end
+    subgraph repo["Private git data repository"]
+        inb[("inputs/YYYY-MM-DD.json")]
+        adv[("advisory/YYYY-MM-DD.json")]
+    end
+    subgraph task["Claude Code scheduled task (Anthropic cloud, owner subscription)"]
+        run["Read bundle, analyse with Claude Opus 5.5, write advisory, run schema check, push"]
+    end
+    bundle --> inb
+    inb --> run
+    run --> adv
+    adv --> imp
+```
+
+### 5.1 Daily timing
+
+| Step | Time (ET) | JST during US DST | JST otherwise |
+|---|---|---|---|
+| Engine publishes the input bundle | by 06:00 | 19:00 | 20:00 |
+| Scheduled task runs (fixed JST schedule, a few minutes past the hour because runs on the hour can start late) | 07:37 / 06:37 | **20:37** | **20:37** |
+| Engine imports the advisory | 08:30–09:00 | 21:30–22:00 | 22:30–23:00 |
+| Hard deadline (later files are ignored that day) | 09:00 | 22:00 | 23:00 |
+
+The task runs every day; on non-trading days it finds no bundle and exits without writing.
+
+### 5.2 Tasks given to the AI
+
+| Task | Output (strict JSON schema) | Used for |
+|---|---|---|
+| T1 Market regime | `regime` ∈ {risk_on, neutral, risk_off, uncertain}, `confidence` 0–1, `key_drivers[]`, `event_risk_next_48h[]`, `rationale` (short), `cited_item_ids[]` | Market-wide size multiplier |
+| T2 Symbol event risk | per symbol: `flag` ∈ {none, elevated, severe}, `horizon_days`, `reason`, `cited_item_ids[]` | Symbol veto |
+| T3 Daily narrative | Short summary of what happened and why positions changed | Reports only, no trading effect |
+
+The bundle never contains account balances, positions, credentials or order details; the AI does not need them.
+
+### 5.3 Mapping AI output to actions (code, not AI)
+
+| AI output | Action |
+|---|---|
+| T1 `risk_off`, confidence ≥ 0.7 | New entries × 0.5 |
+| T1 `uncertain`, or confidence < 0.5 | No change |
+| T2 `severe` | Veto new entries in that symbol for `horizon_days` (max 5) |
+| T2 `elevated` | New entries in that symbol × 0.5 |
+| Anything invalid, missing, late, refused or over budget | No overlay (baseline) |
+
+The mapping is part of the versioned strategy configuration, so its effect is reproducible and reviewable. AI output can never increase size, add orders or change stops. A consequence worth stating: **even a tampered or wrong advisory file can only make the system trade less**, never more.
+
+### 5.4 Scheduled task settings
+
+| Setting | Value |
+|---|---|
+| Model | Claude Opus 5.5 (chosen in the task's model selector) |
+| Repository | The private data repository only (not the code repository) |
+| Connectors | None except GitHub access to the data repository |
+| Network | Default "Trusted" allow-list; no extra domains (all inputs come in the bundle) |
+| Secrets | None (no broker, data-vendor or cloud credentials) |
+| Prompt | Versioned in the code repository (`ai/prompts/`), copied into the task; the advisory records the prompt version |
+| Output check | The task runs the schema validator from the data repository before pushing; the engine validates again on import |
+| Usage | Draws from the subscription's usage limits. If the limit is reached, the run is rejected → no advisory → baseline that day |
+
+Status of the feature: Claude Code scheduled tasks are a **research preview**; behaviour and limits may change, runs on the hour can start a few minutes late, and the minimum interval is one hour (official docs, 2026-10-23). The design tolerates a missing run by falling back to the baseline.
+
+### 5.5 Fallback: pay-as-you-go API (only after a new approval)
+
+If the scheduled task becomes unreliable or its terms change, the same prompt and schema can run through the Anthropic API from a small job, with the input bundle as the request and the advisory as the response. That mode uses structured outputs, the Message Batches API where timing allows, and a hard **USD 10/month cap** enforced before each call. Switching modes needs the owner's approval.
+
+### 5.6 Reproducibility
+
+- Model output is not exactly repeatable (the current API no longer accepts sampling parameters such as temperature). Therefore **every advisory file is kept** with the model name, prompt version, input-bundle hash and creation time, and backtests replay these files instead of calling the model again.
+- The data repository's git history is the audit trail of what the AI said and when.
+
+### 5.7 Safety of AI inputs
+
+- News text is untrusted. It is stripped of markup, length-limited and placed in a clearly marked data section of the bundle; the prompt states that content inside it is data, not instructions.
+- Output must match the schema; `cited_item_ids` must refer to items that were actually in the bundle (simple hallucination check).
+- The scheduled task can only write to the data repository; it has no route to the trading host or the broker.
+
+## 6. Handling shocks, delays, uncertainty and regime change
+
+| Situation | Measures |
+|---|---|
+| Sudden price move on news | Price/volume circuit breakers CB-1, CB-2, CB-5 work without AI (document 05); AI T2 flags add a veto; earnings blackout for single stocks; protective stops |
+| Information delay | Every item carries `published_at` and `retrieved_at`; the pipeline measures latency; only items published before the decision time are used; AI signals have `valid_until` (next session close) and are ignored when stale |
+| AI cannot decide | `uncertain` → no change; invalid or missing → baseline; repeated failures → warning alert |
+| Market regime change | Rule-based regime filter inside the strategies (200-day average, realised volatility); live performance monitor compares rolling 60-day results with the backtest distribution — outside the expected band (e.g. drawdown > 1.5 × the backtest's typical drawdown at that horizon) → sizes halved automatically and a review alert. Rules themselves are not changed automatically. |
+
+## 7. Measuring AI value (AI on vs. AI off)
+
+**Look-ahead problem specific to LLMs:** a language model trained on data up to its training cutoff "knows" what happened after many historical dates. Backtesting an AI overlay on history before the cutoff therefore leaks future information and overstates its value. For this reason:
+
+- AI value is measured **forward**: shadow mode first (AI output recorded but not used), then two **parallel paper books** with the same capital, rules and fill model:
+  - Book A: baseline rules only.
+  - Book B: baseline + AI overlay.
+- Historical tests with AI are only run on data after the model's training cutoff, and labelled as such.
+
+Evaluation:
+
+| Measure | Purpose |
+|---|---|
+| Daily return difference B − A, net of AI cost | Main effect |
+| Max drawdown, volatility, Sharpe of each book | Risk effect |
+| Vetoed / reduced trades and their counterfactual outcome | Did the vetoes avoid losses or cost gains? |
+| AI cost per month and per changed decision | Economics |
+
+Statistics: paired block bootstrap of daily return differences, reported with confidence intervals. With a few trades per month, **3–6 months may still be inconclusive**; the pre-registered rule is: keep the overlay in LIVE only if the net-of-cost improvement (return or drawdown) is supported by the confidence interval; otherwise run LIVE without AI and keep researching in paper. The owner makes the final call.
+
+## 8. Strategy versioning
+
+- Each strategy has an ID and a semantic version. Parameters live in a versioned file whose hash is stored with every intent.
+- A change in rules, parameters or the AI mapping table is a new version, with its own backtest and paper record.
+
+## 9. No self-modification in production
+
+- The production process has **read-only** access to code, strategy files and limits (file permissions on the host).
+- No component, including the AI service, can write parameters or rules at runtime.
+- Improvement ideas (from Claude, Muse or the owner) go to a **research environment** (separate branch, database and data snapshot): walk-forward test → untouched hold-out → shadow paper → review → owner approval for anything that affects risk → release with a new version.
+- Any learned model (if ever used) is trained offline, frozen as a file with a hash and promoted through the same process.
