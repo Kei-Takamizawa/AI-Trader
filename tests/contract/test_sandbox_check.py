@@ -67,7 +67,7 @@ def test_order_outcomes(tmp_path: Path, scenario: str, outcome: str, result: str
     target = "SB-2 fractional" if scenario == "fractional_accepted" else "SB-2 whole"
     finding = next(item for item in report["checks"] if item["check"] == target)
     assert (finding["outcome"], finding["result"]) == (outcome, result)
-    assert exit_code == (1 if result == "fail" else 0)
+    assert exit_code == 1  # SPY flags remain unavailable until the shape is mapped.
     assert report["sdk_version"] == "3.0.4"
     assert report["balances_present"] is True
     assert report["host"] == "jp-openapi-alb.uat.webullbroker.com"
@@ -144,8 +144,7 @@ def test_probe_failures_and_duplicate_findings(tmp_path: Path, scenario: str) ->
         monkeypatch.setattr(check.broker, "order_status", status)
     path, exit_code = check.run(tmp_path)
     report = json.loads(path.read_text())
-    expected = 0 if scenario in {"duplicate_accept", "unknown_found", "unknown_417"} else 1
-    assert exit_code == expected
+    assert exit_code == 1
     if scenario == "no_host":
         assert report["checks"][-1]["result"] == "fail"
     if scenario == "unknown_417":
@@ -208,7 +207,7 @@ def test_cli_fake_transport_reports_and_exit_codes(
     monkeypatch.setattr(cli, "WebullBroker", lambda *args, **kwargs: check.broker)
     monkeypatch.setattr(cli, "SandboxCheck", lambda *args: check)
     result = CliRunner().invoke(cli.app, ["sandbox", "check", "--out-dir", str(tmp_path)])
-    assert result.exit_code == int(fail), result.output
+    assert result.exit_code == 1, result.output
     assert "sandbox report" in result.output
     assert (tmp_path / "2026-10-24.json").exists()
     assert all(secret not in result.output for secret in ENV.values())
@@ -224,7 +223,7 @@ def test_final_fill_has_no_remainder_to_cancel(tmp_path: Path) -> None:
     assert whole["outcome"] == "filled"
     assert whole["result"] == "finding"
     assert not any(call["operation"] == "cancel" for call in whole["calls"])
-    assert code == 0
+    assert code == 1  # SPY flags remain unavailable.
 
 
 def test_cancel_reject_is_resolved_by_status(tmp_path: Path) -> None:
@@ -234,4 +233,84 @@ def test_cancel_reject_is_resolved_by_status(tmp_path: Path) -> None:
     report = json.loads(path.read_text())
     whole = next(item for item in report["checks"] if item["check"] == "SB-2 whole")
     assert whole["result"] == "fail"
+    assert code == 1
+
+
+@pytest.mark.parametrize(
+    ("body", "root_type", "keys", "item_keys"),
+    [
+        (
+            {
+                "profiles": [{"symbol": "private-symbol", "secret_value": "private-value"}],
+                "page": "private-page",
+            },
+            "object",
+            ["page", "profiles"],
+            ["secret_value", "symbol"],
+        ),
+        ([{"z": "private-value", "a": "private-value"}], "array", [], ["a", "z"]),
+        ({"data": [], "other": [{"ignored": "private-value"}]}, "object", ["data", "other"], []),
+        ({"data": ["private-value"]}, "object", ["data"], []),
+        ({"meta": "private-value"}, "object", ["meta"], []),
+        ([], "array", [], []),
+        (None, "unknown", [], []),
+    ],
+)
+def test_instrument_shape_names_only_and_flags_unavailable(
+    tmp_path: Path, body: Any, root_type: str, keys: list[str], item_keys: list[str]
+) -> None:
+    check, fake = setup_check()
+    fake.queue("instruments", body)
+    path, code = check.run(tmp_path)
+    contents = path.read_text()
+    report = json.loads(contents)
+    event = next(call for call in report["calls"] if call["operation"] == "instruments")
+    assert event["shape"]["root_type"] == root_type
+    assert event["shape"]["top_level_keys"] == keys
+    assert event["shape"]["first_item_keys"] == item_keys
+    flags = next(item for item in report["checks"] if item["check"] == "SB-1 SPY flags")
+    assert (flags["result"], flags["outcome"]) == ("fail", "unavailable")
+    assert code == 1
+    assert all(
+        value not in contents for value in ("private-value", "private-page", "private-symbol")
+    )
+
+
+@pytest.mark.parametrize("terminal", ["CANCELED", "CANCELLED", "FILLED", "FAILED"])
+def test_whole_terminal_status_never_sends_cancel(tmp_path: Path, terminal: str) -> None:
+    from tests.contract.webull_fake import FakeResponse, order_item
+
+    check, fake = setup_check()
+    original = fake.send
+
+    def send(request: Any) -> FakeResponse:
+        if request.get_action_name() == "/trading/orders/get":
+            cid = request.get_query_params()["client_order_id"]
+            if cid in fake.orders:
+                fake.orders[cid] = order_item(cid, status=terminal)
+        return original(request)
+
+    fake.send = send  # type: ignore[method-assign]
+    path, _ = check.run(tmp_path)
+    whole = next(
+        item for item in json.loads(path.read_text())["checks"] if item["check"] == "SB-2 whole"
+    )
+    assert whole["result"] == "pass"
+    assert not any(op == "cancel" for op, _ in fake.calls)
+
+
+def test_observed_cancel_and_fractional_probe_payloads(tmp_path: Path) -> None:
+    check, fake = setup_check()
+    path, code = check.run(tmp_path)
+    report = json.loads(path.read_text())
+    places = [params["new_orders"][0] for op, params in fake.calls if op == "place"]
+    assert [item["quantity"] for item in places] == ["1.00000", "1.50000", "0.00001", "1.00000"]
+    assert sum(op == "cancel" for op, _ in fake.calls) == 1
+    whole = next(item for item in report["checks"] if item["check"] == "SB-2 whole")
+    assert whole["outcome"] == "accepted_cancelled"
+    assert any("CANCELED" in call["statuses"] for call in whole["calls"])
+    fractional = next(item for item in report["checks"] if item["check"] == "SB-2 fractional")
+    assert (fractional["outcome"], fractional["result"]) == ("rejected_as_expected", "pass")
+    duplicate = next(item for item in report["checks"] if item["check"] == "SB-3 duplicate")
+    assert duplicate["error_code"] == "OPENAPI_REPEAT_REQUEST"
     assert code == 1

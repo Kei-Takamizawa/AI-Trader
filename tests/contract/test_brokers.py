@@ -219,3 +219,16 @@ def test_production_host_refused(harness: Harness) -> None:
             settlement_date=lambda day: day + timedelta(days=1),
             environment=BrokerEnvironment.WEBULL_LIVE,
         )
+
+
+def test_duplicate_place_race_resolves_by_client_id(harness: Harness) -> None:
+    request = order("order-1", quantity="1", limit="100")
+    ack = harness.broker.submit(request)
+    harness.clock.advance(timedelta(seconds=2))
+    if harness.fake is not None:
+        # The first lookup misses an order that was accepted by an earlier submit.
+        harness.fake.queue("detail", {"orders": []})
+    assert harness.broker.submit(request) == ack
+    if harness.fake is not None:
+        operations = [op for op, _ in harness.fake.calls]
+        assert operations == ["detail", "place", "detail", "place", "detail"]

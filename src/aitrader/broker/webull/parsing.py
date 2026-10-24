@@ -48,12 +48,14 @@ POSITION_FIELDS = (
     "fx_rate",
     "base_currency_market_value",
 )
+OPTIONAL_POSITION_FIELDS = {"available_quantity", "instrument_id"}
 STATUSES = {
     "PENDING": OrderStatus.SUBMITTED,
     "SUBMITTED": OrderStatus.SUBMITTED,
     "PARTIAL_FILLED": OrderStatus.SUBMITTED,
     "FILLED": OrderStatus.FILLED,
     "CANCELLED": OrderStatus.CANCELLED,
+    "CANCELED": OrderStatus.CANCELLED,
     "FAILED": OrderStatus.REJECTED,
 }
 
@@ -157,10 +159,11 @@ def positions(body: Any) -> list[BrokerPosition]:
     for raw in array(body, "positions"):
         data = obj(raw, "position")
         for field in POSITION_FIELDS:
+            if field in OPTIONAL_POSITION_FIELDS:
+                continue
             text(data, field)
         for field in (
             "quantity",
-            "available_quantity",
             "market_value",
             "last_price",
             "cost_price",

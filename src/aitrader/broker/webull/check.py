@@ -142,25 +142,23 @@ class SandboxCheck:
             raise BrokerUnavailableError("account_id")
 
     def _instrument(self) -> None:
-        body = parsing.obj(
-            self.broker.call("instruments", category="US_STOCK", symbols="SPY"), "instruments"
-        )
-        rows = parsing.array(body.get("data"), "data")
-        if not any(
-            isinstance(row, dict)
-            and row.get("symbol") == "SPY"
-            and isinstance(row.get("fractionable"), bool)
-            and row.get("status") in {"OC", "CO", "NT"}
-            for row in rows
-        ):
-            raise BrokerUnavailableError("instrument flags")
+        self.broker.call("instruments", category="US_STOCK", symbols="SPY")
+        # The observed response shape has not yet been mapped by the designer.
+        raise BrokerUnavailableError("instrument flags")
 
-    def _confirm_cancel(self, client_order_id: str) -> BrokerOrder:
-        # A fill may win the cancellation race. Confirm that no remainder is open.
+    def _confirm_cancel(
+        self, client_order_id: str, order: BrokerOrder | None = None
+    ) -> BrokerOrder:
+        # Never cancel a terminal order, including an already cancelled duplicate probe.
+        if order is None:
+            order = self._call(lambda: self.broker.order_status(client_order_id))
+        terminal = {OrderStatus.CANCELLED, OrderStatus.FILLED, OrderStatus.REJECTED}
+        if order.status in terminal:
+            return order
         with suppress(OrderRejectedError):
             self._call(lambda: self.broker.cancel(client_order_id))
         order = self._call(lambda: self.broker.order_status(client_order_id))
-        if order.status not in {OrderStatus.CANCELLED, OrderStatus.FILLED}:
+        if order.status not in terminal:
             raise BrokerUnavailableError("cancel not confirmed")
         return order
 
@@ -186,8 +184,12 @@ class SandboxCheck:
                 filled = order.filled_quantity > 0
             else:
                 filled = False
-            if not whole or order.status is not OrderStatus.FILLED:
-                cancelled = self._confirm_cancel(request.client_order_id)
+            if not whole or order.status not in {
+                OrderStatus.FILLED,
+                OrderStatus.CANCELLED,
+                OrderStatus.REJECTED,
+            }:
+                cancelled = self._confirm_cancel(request.client_order_id, order if whole else None)
                 filled = filled or cancelled.filled_quantity > 0
             if whole:
                 self._record(
@@ -238,7 +240,7 @@ class SandboxCheck:
         )
         accepted = self._order("SB-2 whole", request, whole=True)
         for suffix, quantity in (
-            ("fractional", Decimal("0.01000")),
+            ("fractional", Decimal("1.5")),
             ("below-dollar", Decimal("0.00001")),
         ):
             self._order(

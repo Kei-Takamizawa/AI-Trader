@@ -670,8 +670,7 @@ def test_required_balance_fields(field: str, malformation: str) -> None:
 
 
 def test_unused_position_numbers_and_required_place_time_are_validated() -> None:
-    with pytest.raises(BrokerUnavailableError, match="available_quantity"):
-        parsing.positions([position(available_quantity="invalid")])
+    assert parsing.positions([position(available_quantity="invalid")])[0].quantity == 1
     with pytest.raises(BrokerUnavailableError, match="place_time_at"):
         parsing.order(order_item(place_time_at="invalid", filled_time_at=NOW.isoformat()))
 
@@ -711,7 +710,7 @@ def test_only_terminal_nonzero_snapshots_produce_fills(status: str, quantity: st
     broker, fake = setup()
     fake.orders["order-1"] = order_item(status=status, filled_quantity=quantity, filled_price="100")
     fills = broker.fills_since(NOW)
-    terminal = status in {"FILLED", "CANCELLED", "FAILED"}
+    terminal = status in {"FILLED", "CANCELLED", "CANCELED", "FAILED"}
     if terminal and Decimal(quantity) > 0:
         assert len(fills) == 1
         assert fills[0].fill.fill_id == "order-1:final"
@@ -764,3 +763,42 @@ def test_history_overlap_clamps_at_six_month_boundary(offset: int) -> None:
     assert fake.calls[0][1]["start_time"] == start.isoformat(timespec="milliseconds").replace(
         "+00:00", "Z"
     )
+
+
+@pytest.mark.parametrize("value", [None, "", "absent"])
+def test_observed_positions_optional_fields(value: str | None) -> None:
+    broker, fake = setup()
+    data = position(available_quantity=value, instrument_id=value)
+    if value == "absent":
+        del data["available_quantity"]
+        del data["instrument_id"]
+    fake.queue("positions", [data])
+    assert broker.positions()[0].cost_usd == 100
+    assert shape("positions", [data])["available_quantity"] is False
+    assert shape("positions", [data])["instrument_id"] is False
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "OPENAPI_REPEAT_REQUEST",
+        "OPENAPI_ORDER_CANNOT_OPERATE",
+        "OPENAPI_FRACTION_V2_BUY_AMOUNT_TOO_SMALL",
+    ],
+)
+def test_observed_reject_codes_are_known(code: str) -> None:
+    broker, fake = setup()
+    fake.queue("place", {"error_code": code, "message": "observed rule"}, 417)
+    with pytest.raises(OrderRejectedError) as caught:
+        broker.place_once(order())
+    assert caught.value.code == code
+    assert caught.value.known is True
+
+
+def test_repeat_request_without_matching_order_keeps_rejection() -> None:
+    broker, fake = setup()
+    fake.queue("place", {"error_code": "OPENAPI_REPEAT_REQUEST", "message": "duplicate"}, 417)
+    with pytest.raises(OrderRejectedError) as caught:
+        broker.submit(order())
+    assert caught.value.code == "OPENAPI_REPEAT_REQUEST"
+    assert [op for op, _ in fake.calls] == ["detail", "place", "detail"]

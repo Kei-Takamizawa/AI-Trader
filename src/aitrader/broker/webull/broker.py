@@ -178,7 +178,7 @@ class WebullBroker:
                         "latency_ms": str(
                             (self._clock.now() - started) // timedelta(microseconds=1000)
                         ),
-                        "shape": shape(operation, body),
+                        "shape": self._safe(shape(operation, body)),
                         "statuses": self._safe(statuses(operation, body)),
                     }
                 )
@@ -315,7 +315,15 @@ class WebullBroker:
         try:
             existing = self.order_status(request.client_order_id)
         except OrderNotFoundError:
-            return self.place_once(request)
+            try:
+                return self.place_once(request)
+            except OrderRejectedError as exc:
+                if exc.code != "OPENAPI_REPEAT_REQUEST":
+                    raise
+                try:
+                    existing = self.order_status(request.client_order_id)
+                except OrderNotFoundError:
+                    raise exc from None
         return BrokerOrderAck(
             client_order_id=existing.client_order_id,
             broker_order_id=existing.broker_order_id,
@@ -379,8 +387,8 @@ def statuses(operation: str, body: Any) -> list[str]:
     ]
 
 
-def shape(operation: str, body: Any) -> dict[str, bool]:
-    """Only fixed, documented field names enter a report, never arbitrary body keys."""
+def shape(operation: str, body: Any) -> dict[str, Any]:
+    """Report field presence; instruments additionally expose names without values."""
     fields: tuple[str, ...] = ()
     rows: Any = []
     if operation == "balance":
@@ -413,8 +421,28 @@ def shape(operation: str, body: Any) -> dict[str, bool]:
         fields, rows = ("estimated_cost", "estimated_transaction_fee"), [body]
     if not isinstance(rows, list):
         rows = []
-    return {
-        field: bool(rows)
-        and all(isinstance(row, dict) and parsing.present(row.get(field)) for row in rows)
-        for field in fields
-    }
+    findings: dict[str, Any] = {}
+    if operation == "instruments":
+        findings["root_type"] = (
+            "object" if isinstance(body, dict) else "array" if isinstance(body, list) else "unknown"
+        )
+        findings["top_level_keys"] = sorted(body) if isinstance(body, dict) else []
+        lists = (
+            [body]
+            if isinstance(body, list)
+            else (
+                [value for value in body.values() if isinstance(value, list)]
+                if isinstance(body, dict)
+                else []
+            )
+        )
+        first = lists[0][0] if lists and lists[0] else None
+        findings["first_item_keys"] = sorted(first) if isinstance(first, dict) else []
+    findings.update(
+        {
+            field: bool(rows)
+            and all(isinstance(row, dict) and parsing.present(row.get(field)) for row in rows)
+            for field in fields
+        }
+    )
+    return findings

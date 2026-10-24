@@ -27,3 +27,21 @@ KNOWN_CODES = {
         "https://developer.webull.co.jp/apis/docs/trade-api/faq",
     ),
 }
+
+# Observed by the operator in document 14, section 8.1 (2026-10-24).
+KNOWN_CODES.update(
+    {
+        "OPENAPI_REPEAT_REQUEST": (
+            "Duplicate client order ID",
+            "docs/design/14-webull-openapi-research.md#81-first-sandbox-results-2026-10-24",
+        ),
+        "OPENAPI_ORDER_CANNOT_OPERATE": (
+            "Operation not allowed in the order state",
+            "docs/design/14-webull-openapi-research.md#81-first-sandbox-results-2026-10-24",
+        ),
+        "OPENAPI_FRACTION_V2_BUY_AMOUNT_TOO_SMALL": (
+            "Fractional buy below the minimum amount",
+            "docs/design/14-webull-openapi-research.md#81-first-sandbox-results-2026-10-24",
+        ),
+    }
+)

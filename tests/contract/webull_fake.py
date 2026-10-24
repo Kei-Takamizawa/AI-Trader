@@ -139,7 +139,9 @@ class FakeTransport:
             data = params["new_orders"][0]
             cid = data["client_order_id"]
             if cid in self.orders:
-                return FakeResponse({"error_code": "DUPLICATE_TEST", "message": "duplicate"}, 417)
+                return FakeResponse(
+                    {"error_code": "OPENAPI_REPEAT_REQUEST", "message": "duplicate"}, 417
+                )
             fractional = data["quantity"] not in {"1", "1.00000"}
             if self.whole_reject or (fractional and not self.fractional_accept):
                 return FakeResponse({"error_code": "INVALID_PARAMETER", "message": "rule"}, 417)
@@ -166,7 +168,7 @@ class FakeTransport:
         if op == "cancel":
             cid = params["client_order_id"]
             if self.cancel_confirm:
-                self.orders[cid]["status"] = "CANCELLED"
+                self.orders[cid]["status"] = "CANCELED"
             return FakeResponse({"client_order_id": cid, "order_id": "broker-1"})
         if op in {"open", "history"}:
             return FakeResponse({"data": [{"orders": list(self.orders.values())}]})

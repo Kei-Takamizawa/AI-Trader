@@ -383,7 +383,7 @@ def test_cli_success_reports_only_token_facts(
         lambda broker, clock: SandboxCheck(broker, clock, wait=lambda seconds: None),
     )
     result = CliRunner().invoke(cli.app, ["sandbox", "check", "--out-dir", str(tmp_path)])
-    assert result.exit_code == 0, result.output
+    assert result.exit_code == 1, result.output  # Unmapped SPY flags remain a failure.
     report_text = (tmp_path / "2026-10-24.json").read_text()
     facts = json.loads(report_text)["checks"][0]
     assert facts["check"] == "token"
