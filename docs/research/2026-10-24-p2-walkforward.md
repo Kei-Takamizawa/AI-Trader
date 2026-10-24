@@ -40,8 +40,8 @@ S2 was positive in 4 of 9 and did not trade at all in the second half of 2022.
 
 ## 3. Stability of the selection (S1)
 
-- The selected variant changed four times in nine folds (skip 5/top 3, then skip 5/top 2,
-  then skip 0/top 2, then back). Training Sharpes were below 0.45 for every variant in every
+- The selected variant changed three times in nine folds (skip 5/top 3, then skip 5/top 2,
+  then skip 0/top 2, then back to skip 5/top 3). Training Sharpes were below 0.45 for every variant in every
   fold and negative for at least one variant in eight folds.
 - The default variant (skip 0, top 3) had a negative training Sharpe in six of nine folds.
 - There is no stable optimum: neighbouring variants differ in sign from fold to fold. This is the
