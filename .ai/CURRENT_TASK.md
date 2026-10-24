@@ -296,3 +296,65 @@ body). It also records these "shape findings", with no values: whether each requ
 the reference file was present (field name → true/false), the observed order `status` strings,
 and the `error_code` seen for the duplicate `client_order_id` and for an unknown
 `client_order_id` lookup (`aitsb-unknown-<uuid8>`).
+
+## Review round 3 (designer, 2026-10-24) — sandbox check returned 401 on every call
+
+The operator ran `aitrader sandbox check` once on 1b39e58. DNS, TLS and the host all worked
+(SB-6 pass), but every API call returned HTTP 401 `UNAUTHORIZED`. No order was accepted. There are
+two causes. The operator and owner are fixing the first one. This round fixes the second.
+
+1. **Wrong values on the Mac (owner side).** The lengths of the configured values do not match
+   the documented test accounts (App Key 32, App Secret 32, Account ID 19 digits).
+2. **No access token.** The adapter builds `ApiClient` without the SDK's client initialization.
+   In SDK 3.0.4, `TradeClient` runs
+   `webull/core/http/initializer/client_initializer.py::ClientInitializer.initializer`. That
+   reads the token config (`token_check_enabled`) and, when it is enabled, creates or loads a
+   token via `TokenManager` and calls `api_client.set_token(...)`. Only then does
+   `get_response` send `x-access-token` (`webull/core/client.py`, around line 258). Webull's token
+   page says tokens created in the test environment are valid at once (`NORMAL`, no 2FA). The
+   developer page's own example uses `TradeClient`, so it runs this step.
+
+### Required changes
+
+- **A1. Token initialization in `SDKTransport`:**
+  - After the host check and `set_token_dir(<temporary dir>)`, run the SDK's own initializer once
+    (`ClientInitializer.initializer(self._client)`, or the equivalent you find in the installed
+    source). Do not re-implement token requests.
+  - Build `ApiClient` with `token_check_duration_seconds=10` and `token_check_interval_seconds=5`,
+    so a token that is not `NORMAL` fails within about 10 s instead of 300 s.
+  - Before initializing, re-check the resolved host. The initializer's own requests go through the
+    same `jp` endpoint resolver, so they reach only the allowed UAT host. A test must prove that
+    the initializer is not called when the resolved host is not the allowed one.
+  - Map failures to `BrokerAuthError`: an SDK `ClientException` from the initializer (for example
+    `ERROR_INIT_TOKEN`, `ERROR_CREATE_TOKEN`, `ERROR_CHECK_TOKEN`, `ERROR_CHECK_TOKEN_ENABLE`), and
+    a 401 or 403 during it. Keep the SDK error code; never put the token, the message body or
+    headers in the exception.
+  - The token value is a secret, like the app secret. Add it to the redaction set once it is
+    known (`api_client.get_token()`), and extend the AC 3 leak test with an invented token value.
+  - The token file stays in the private temporary directory and is removed by `close()`. A test
+    checks that the directory is gone after `close()`.
+  - Still no 2FA flow, no waiting for a human and no `TradeClient`. If the SDK's initializer
+    needs `TradeClient` internals, stop and report.
+- **C1. Sandbox check stops on authentication failure.** If the token initialization fails, or
+  the first SB-1 call returns 401 or 403:
+  - record that check as `fail` with its `error_code`;
+  - mark every remaining check `outcome = skipped_auth`, `result = fail`, without calling the API;
+  - exit 1.
+  This avoids sending orders after we already know authentication is broken.
+- **C2. Token facts in the report:** add one check `token` with `token_check_enabled`
+  (true/false/unknown), the token `status` string (`NORMAL`, `PENDING`, …), the SDK error code if
+  any, and the latency. Never record the token, its prefix or its expiry value. A boolean
+  `expires_present` is enough.
+
+### Tests (fake transport, offline)
+
+- Token enabled and `NORMAL` → requests carry the token (assert on the fake's received headers by
+  the presence of `x-access-token` only).
+- Token disabled → no token header, and the calls still proceed.
+- Token `PENDING` until timeout → `BrokerAuthError` within the bounded duration. Patch the SDK's
+  sleep or clock; real waiting is not allowed in tests.
+- Config 401 → `BrokerAuthError`, with the check stopping as in C1.
+- Leak test with an invented token value, as above.
+
+Acceptance criteria 1–8 still apply. AC 2 adds the "initializer not called on a wrong resolved
+host" test; AC 3 adds the token; AC 5 adds C1 and C2.
