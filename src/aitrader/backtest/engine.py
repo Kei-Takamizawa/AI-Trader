@@ -29,6 +29,7 @@ from aitrader.data import (
     DataQualityGate,
     PointInTimeBars,
 )
+from aitrader.data.adjusted import MINOR_ADJUSTMENT_LIMIT
 from aitrader.domain import (
     Currency,
     Fill,
@@ -98,9 +99,10 @@ def run_backtest(
     start: date | None = None,
     end: date | None = None,
     calendar: TradingCalendar | None = None,
+    point_in_time: PointInTimeBars | None = None,
 ) -> BacktestResult:
     """Replay raw executions; dividend cash settles on ex-date rather than actual pay date."""
-    pit = PointInTimeBars(source, adjusted)
+    pit = point_in_time or PointInTimeBars(source, adjusted)
     bt = settings.require_backtest()
     calendar = calendar or TradingCalendar()
     sessions = calendar.sessions(start or bt.start, end or bt.end)
@@ -173,6 +175,11 @@ def run_backtest(
         broker.settle(session)
         ledger.settle(session, clock.now())
         for action in pit.actions_on(session):
+            if (
+                action.kind is CorporateActionKind.UNEXPLAINED
+                and abs(action.factor - 1) <= MINOR_ADJUSTMENT_LIMIT
+            ):
+                continue
             held = ledger.position(action.symbol)
             if action.kind is not CorporateActionKind.DISTRIBUTION:
                 if held is not None or any(i.symbol == action.symbol for i in pending):
@@ -266,6 +273,7 @@ def run_backtest(
         )
         context = StrategyContext(
             session=session,
+            next_session=calendar.next_session(session),
             as_of=clock.now(),
             history={s: pit.history(s, clock.now()) for s in source.symbols},
             holdings=cycle.holdings(),

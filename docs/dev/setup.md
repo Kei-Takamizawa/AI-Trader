@@ -81,3 +81,19 @@ configuration exits with code 2 and names the offending field.
   `AITRADER_DATA_API_KEY`, `AITRADER_DATA_API_SECRET`, `AITRADER_DATA_REPO_TOKEN`.
 - Outside LIVE, the program refuses to start if any `LIVE_*` or Webull production variable
   (`WEBULL_*` other than `WEBULL_SANDBOX_*`) is present.
+
+## Walk-forward
+
+Run the predeclared S1 grid (or `--strategy S2` for its defaults) offline:
+
+```bash
+uv run aitrader walkforward --data-dir data/bars --out-dir results/walkforward --strategy S1 --start 2017-01-03
+```
+
+Training windows default to 36 calendar months, tests to 6 months, and the locked hold-out
+to the last 24 months. Override these with `--train-months`, `--test-months`, and
+`--holdout-months` before running. No hold-out session is evaluated.
+`walkforward.json` contains every training score, the selected variant and test metrics per
+fold, the chained test equity curve and its return/risk metrics, and the SPY buy-and-hold
+benchmark over those same test sessions. `manifest.yaml` records the commit, configuration,
+parameter grid, data snapshots, corporate-action counts and hold-out boundary.

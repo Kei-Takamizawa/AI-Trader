@@ -264,7 +264,12 @@ def test_dual_series_cli_is_reproducible_and_manifest_counts_period_only(
     manifest = yaml.safe_load((tmp_path / "a" / "manifest.yaml").read_text())
     assert manifest["data_snapshot_hash"] == raw.snapshot_hash
     assert manifest["signal_data_snapshot_hash"] == adjusted.snapshot_hash
-    assert manifest["corporate_actions"] == {"split": 0, "distribution": 1, "unexplained": 1}
+    assert manifest["corporate_actions"] == {
+        "split": 0,
+        "distribution": 1,
+        "unexplained": 1,
+        "unexplained_minor": 0,
+    }
     assert "dividends_gross_usd" in json.loads((tmp_path / "a" / "metrics.json").read_text())["pnl"]
     flat = build_manifest(
         settings=settings(),
@@ -276,7 +281,12 @@ def test_dual_series_cli_is_reproducible_and_manifest_counts_period_only(
         variants_tried=1,
     )
     assert flat["signal_data_snapshot_hash"] is None
-    assert flat["corporate_actions"] == {"split": 0, "distribution": 0, "unexplained": 0}
+    assert flat["corporate_actions"] == {
+        "split": 0,
+        "distribution": 0,
+        "unexplained": 0,
+        "unexplained_minor": 0,
+    }
 
 
 @pytest.mark.parametrize("field", ["dividend_us_withholding_pct", "dividend_jp_withholding_pct"])
@@ -294,3 +304,64 @@ def test_withholding_settings_boundaries(field: str, value: str) -> None:
     else:
         with pytest.raises(ValidationError, match=field):
             BacktestSettings.model_validate(payload)
+
+
+@pytest.mark.parametrize("factor", ["1.0019", "1.002", "1.0021"])
+def test_minor_unexplained_boundary_and_no_cash(tmp_path: Path, factor: str) -> None:
+    raw, adjusted = sources(tmp_path, DAYS, [D(100)] * len(DAYS), {EX: D(factor)})
+    if D(factor) > D("1.002"):
+        with pytest.raises(CorporateActionError):
+            run_backtest(
+                settings(),
+                Scripted(SIGNAL, "3"),
+                raw,
+                adjusted=adjusted,
+                start=SIGNAL,
+                end=END,
+                calendar=CAL,
+            )
+        return
+    result = run_backtest(
+        settings(),
+        Scripted(SIGNAL, "3"),
+        raw,
+        adjusted=adjusted,
+        start=SIGNAL,
+        end=END,
+        calendar=CAL,
+    )
+    baseline = run_backtest(
+        settings(), Scripted(SIGNAL, "3"), raw, start=SIGNAL, end=END, calendar=CAL
+    )
+    assert result.ledger.position("SPY") is not None
+    assert result.ledger.cash_usd_settled == baseline.ledger.cash_usd_settled
+    assert result.points == baseline.points
+    manifest = build_manifest(
+        settings=settings(),
+        strategy=Recorder(),
+        source=raw,
+        adjusted=adjusted,
+        start=SIGNAL,
+        end=END,
+        git_commit="test",
+        variants_tried=1,
+    )
+    assert manifest["corporate_actions"] == {
+        "split": 0,
+        "distribution": 0,
+        "unexplained": 1,
+        "unexplained_minor": 1,
+    }
+
+
+def test_next_session_context_includes_monday_holiday() -> None:
+    raw = DailyBarSource(Path("tests/fixtures/bars"), CAL)
+    recorder = Recorder()
+    run_backtest(
+        settings(), recorder, raw, start=date(2023, 1, 11), end=date(2023, 1, 13), calendar=CAL
+    )
+    assert [(c.session, c.next_session) for c in recorder.contexts] == [
+        (date(2023, 1, 11), date(2023, 1, 12)),
+        (date(2023, 1, 12), date(2023, 1, 13)),
+        (date(2023, 1, 13), date(2023, 1, 17)),
+    ]

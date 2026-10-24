@@ -27,6 +27,8 @@ Parameters are fixed sets, not optimised per instrument. Walk-forward testing (d
 
 ### S1 — Trend-filtered momentum rotation (weekly)
 
+Implemented in TASK-007b (version 1.0.0; cash instead of a cash proxy; equivalents de-duplicated).
+
 | Element | Rule |
 |---|---|
 | Signal time | Friday close (or last session of the week) |

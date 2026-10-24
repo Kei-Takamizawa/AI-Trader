@@ -15,6 +15,7 @@ from aitrader.domain import Bar
 from aitrader.domain.types import NonNegativeDecimal, PositiveDecimal
 
 RATIO_TOLERANCE = Decimal("0.0005")
+MINOR_ADJUSTMENT_LIMIT = Decimal("0.002")
 SPLIT_THRESHOLD = Decimal("0.2")
 _SPLIT_RATIOS = tuple(
     sorted(

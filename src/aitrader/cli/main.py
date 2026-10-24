@@ -1,6 +1,7 @@
 """``aitrader`` command-line interface."""
 
 import os
+import subprocess
 from datetime import date
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
@@ -10,6 +11,7 @@ from typing import Annotated
 import typer
 
 from aitrader.backtest import build_manifest, metrics_for, run_backtest, write_results
+from aitrader.backtest.walkforward import run_walkforward, write_walkforward
 from aitrader.clock import TradingCalendar
 from aitrader.config import (
     ConfigError,
@@ -125,13 +127,7 @@ def backtest(
     last = date.fromisoformat(end) if end else period.end
     calendar = TradingCalendar()
     try:
-        has_raw = (data_dir / "raw").is_dir()
-        has_adjusted = (data_dir / "adjusted").is_dir()
-        if has_raw != has_adjusted:
-            missing = "adjusted/" if has_raw else "raw/"
-            raise DataError(f"missing {missing} in {data_dir}; both series are required")
-        source = DailyBarSource(data_dir / "raw" if has_raw else data_dir, calendar)
-        adjusted = DailyBarSource(data_dir / "adjusted", calendar) if has_adjusted else None
+        source, adjusted = _bar_sources(data_dir, calendar)
         chosen = STRATEGIES[strategy]()
         result = run_backtest(
             settings, chosen, source, adjusted=adjusted, start=first, end=last, calendar=calendar
@@ -151,6 +147,70 @@ def backtest(
     )
     write_results(out_dir, manifest, metrics_for(result, source, settings), result)
     typer.echo(f"run_id: {manifest['run_id']}")
+    typer.echo(f"results: {out_dir}")
+
+
+def _bar_sources(
+    data_dir: Path, calendar: TradingCalendar
+) -> tuple[DailyBarSource, DailyBarSource | None]:
+    has_raw = (data_dir / "raw").is_dir()
+    has_adjusted = (data_dir / "adjusted").is_dir()
+    if has_raw != has_adjusted:
+        missing = "adjusted/" if has_raw else "raw/"
+        raise DataError(f"missing {missing} in {data_dir}; both series are required")
+    source = DailyBarSource(data_dir / "raw" if has_raw else data_dir, calendar)
+    adjusted = DailyBarSource(data_dir / "adjusted", calendar) if has_adjusted else None
+    return source, adjusted
+
+
+def _git_commit() -> str:
+    try:
+        return subprocess.check_output(
+            ["/usr/bin/git", "rev-parse", "HEAD"], text=True, stderr=subprocess.PIPE
+        ).strip()
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise DataError("cannot read the git commit for the walk-forward manifest") from exc
+
+
+@app.command()
+def walkforward(
+    data_dir: Annotated[Path, typer.Option(help="Raw/adjusted directories or flat CSV bars.")],
+    out_dir: Annotated[Path, typer.Option(help="Walk-forward output directory.")],
+    strategy: Annotated[str, typer.Option(help="Strategy ID: S1 or S2.")] = "S1",
+    config_dir: Annotated[Path, typer.Option(help="Configuration directory.")] = Path("config"),
+    start: Annotated[str, typer.Option(help="First training session.")] = "2017-01-03",
+    train_months: Annotated[int, typer.Option()] = 36,
+    test_months: Annotated[int, typer.Option()] = 6,
+    holdout_months: Annotated[int, typer.Option()] = 24,
+) -> None:
+    """Select on training windows and evaluate subsequent tests, leaving hold-out locked."""
+    if strategy not in ("S1", "S2"):
+        typer.echo(f"error: unknown strategy {strategy!r}; known: S1, S2", err=True)
+        raise typer.Exit(EXIT_USAGE_ERROR)
+    try:
+        settings = load_settings(Mode.BACKTEST, config_dir)
+    except ConfigError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(EXIT_CONFIG_ERROR) from exc
+    try:
+        calendar = TradingCalendar()
+        source, adjusted = _bar_sources(data_dir, calendar)
+        manifest, result = run_walkforward(
+            settings,
+            strategy,
+            source,
+            adjusted=adjusted,
+            start=date.fromisoformat(start),
+            train_months=train_months,
+            test_months=test_months,
+            holdout_months=holdout_months,
+            git_commit=_git_commit(),
+            calendar=calendar,
+        )
+    except DataError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(EXIT_DATA_ERROR) from exc
+    write_walkforward(out_dir, manifest, result)
     typer.echo(f"results: {out_dir}")
 
 
