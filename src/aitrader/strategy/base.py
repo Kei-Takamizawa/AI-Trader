@@ -29,6 +29,7 @@ class StrategyContext(BaseModel):
 
     session: date
     """The last closed session; intents are executed in the next one."""
+    next_session: date | None = None
     as_of: UtcDatetime
     history: Mapping[str, tuple[Bar, ...]]
     holdings: Mapping[str, Holding] = Field(default_factory=dict)

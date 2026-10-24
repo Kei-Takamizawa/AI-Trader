@@ -20,8 +20,8 @@ in this build.
 | TASK-009 | SQLite storage: orders, journal, halts, decisions, runs, single-instance lock and lease | done |
 | TASK-010 | Reconciliation of the engine's books against the broker | done |
 | TASK-007a | Point-in-time adjusted signals, raw fills, dividends as cash, exact split ratios | done (Codex cycle 1, PR #2) |
-| TASK-007b | Strategy S1 and the walk-forward runner | **next** (spec to be written) |
-| TASK-007c | Research report on real data (operator runs it) | after 007b and the real download |
+| TASK-007b | Strategy S1, walk-forward runner, minor vendor adjustments | done (Codex cycle 2, PR #3) |
+| TASK-007c | Research report on real data (operator runs it) | **next** |
 | TASK-008 | Webull adapter on the official SDK, contract tests, sandbox runs | later (phase P3b) |
 
 All of the above up to TASK-010 is on `main`: pull request
@@ -59,15 +59,17 @@ tests. Claude implemented TASK-002 to TASK-006, TASK-009 and TASK-010 itself bef
 
 ## Next steps
 
-1. **TASK-007b spec (designer):** strategy S1 and the walk-forward runner. It must also decide
-   how to treat the small "unexplained" factors (1.0005 to 1.0009) found in the real data, which
-   currently fail closed when held.
+1. **TASK-007c:** the operator runs `aitrader walkforward` for S1 and S2 on the real data
+   (`data/bars`, end 2026-10-16) and sends the designer `walkforward.json` and `manifest.yaml`
+   (results may be committed under `reports/`); the designer writes the research report with
+   go/no-go per strategy. The hold-out stays locked until a strategy version is frozen.
 2. **Data fetch follow-up:** handle the free plan's limit on recent SIP data (for example an
    explicit end timestamp or a later end date); the designer verifies Alpaca's documentation first.
-3. TASK-007c (research report and go/no-go per strategy, phase P2 exit), run by the operator.
 
 ## Open items
 
+- `aitrader walkforward` reads the commit with a hard-coded `/usr/bin/git` (exit 4 if missing);
+  `backtest` takes `--git-commit` instead. Align them in a small task.
 - `ResourceWarning` for an unclosed SQLite connection in some storage tests
   (`storage/database.py`); harmless today, to fix in a small task.
 - **Secret scanning in CI** is required by document 06 §5 but not in place yet. The tool must be

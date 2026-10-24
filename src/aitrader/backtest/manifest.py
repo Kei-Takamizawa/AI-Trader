@@ -12,6 +12,7 @@ import yaml
 from aitrader.backtest.engine import BacktestResult
 from aitrader.config import Settings, config_hash
 from aitrader.data import CorporateActionKind, DailyBarSource, PointInTimeBars
+from aitrader.data.adjusted import MINOR_ADJUSTMENT_LIMIT
 from aitrader.fees import WEBULL_JP, ExecutionAssumptions
 from aitrader.metrics import buy_and_hold, fmt, summarize
 from aitrader.strategy import Strategy, params_hash
@@ -30,8 +31,9 @@ def build_manifest(
     variants_tried: int,
     holdout_used: bool = False,
     adjusted: DailyBarSource | None = None,
+    point_in_time: PointInTimeBars | None = None,
 ) -> dict[str, object]:
-    pit = PointInTimeBars(source, adjusted)
+    pit = point_in_time or PointInTimeBars(source, adjusted)
     manifest: dict[str, object] = {
         "git_commit": git_commit,
         "config_hash": config_hash(settings),
@@ -42,15 +44,7 @@ def build_manifest(
         },
         "data_snapshot_hash": source.snapshot_hash,
         "signal_data_snapshot_hash": pit.signal_snapshot_hash,
-        "corporate_actions": {
-            kind.value: sum(
-                1
-                for symbol in pit.symbols
-                for action in pit.actions(symbol)
-                if start <= action.session <= end and action.kind is kind
-            )
-            for kind in CorporateActionKind
-        },
+        "corporate_actions": action_counts(pit, start, end),
         "ai_replay_store_hash": None,
         "period": {
             "start": start.isoformat(),
@@ -63,6 +57,27 @@ def build_manifest(
     }
     digest = hashlib.sha256(json.dumps(manifest, sort_keys=True).encode("utf-8")).hexdigest()
     return {"run_id": f"bt-{digest[:16]}", **manifest}
+
+
+def action_counts(pit: PointInTimeBars, start: date, end: date) -> dict[str, int]:
+    counts = {
+        kind.value: sum(
+            1
+            for symbol in pit.symbols
+            for action in pit.actions(symbol)
+            if start <= action.session <= end and action.kind is kind
+        )
+        for kind in CorporateActionKind
+    }
+    counts["unexplained_minor"] = sum(
+        1
+        for symbol in pit.symbols
+        for action in pit.actions(symbol)
+        if start <= action.session <= end
+        and action.kind is CorporateActionKind.UNEXPLAINED
+        and abs(action.factor - 1) <= MINOR_ADJUSTMENT_LIMIT
+    )
+    return counts
 
 
 def metrics_for(

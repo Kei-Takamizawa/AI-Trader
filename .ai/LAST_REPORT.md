@@ -1,117 +1,101 @@
-# LAST_REPORT — TASK-007a
+# LAST_REPORT — TASK-007b
 
 Status: DONE
 
 ## Summary
-Completed Review round 1, finding 1 with the designer's corrected allowed-ratio rule, and
-finding 2. Shared corporate-action detection now snaps splits only to approved exact ratios;
-unmatched factors become unexplained actions. PIT volumes use rational arithmetic with exact
-ties-to-even rounding, and the property test no longer depends on `.pytest_cache` existing.
+Implemented S1 version 1.0.0 weekly momentum rotation with trend eligibility, deterministic ranking, stable equivalent-ETF selection, and entry stops. Added training-only walk-forward selection over the declared S1/S2 grids, chained test returns, benchmark metrics, deterministic output files, and an untouched hold-out boundary. Minor unexplained adjustments through 0.2% now adjust signal history without booking cash or stopping held positions; larger unsupported actions still fail closed. All required checks pass, all measured source modules retain 100% statement and branch coverage, and existing fixture equity and metrics are byte-identical to the pre-change baseline.
 
-Cycle: 1, Review round 1; implementer host: macOS (Darwin arm64), Python 3.14.7.
-Starting branch: `claude/project-thread-whk5dv`.
-Starting HEAD: `48379403e2f602c9ac6344f4714c0e96f957f6d3`; initial working tree was clean.
-Read `AGENTS.md`, `CLAUDE.md`, the full task and relevant design/status documents. The complete
-instructions already existed in `.ai/CURRENT_TASK.md` and were retained without edits.
+Execution: macOS (Darwin), Python 3.14.7, local repository; no Windows execution.
+Branch: `claude/project-thread-whk5dv`.
+Starting and unchanged HEAD: `0f6f57bba35689f899396b08cf260aced05db1f7`.
+The initial working tree was clean. The complete approved task was already stored in
+`.ai/CURRENT_TASK.md`; it was read fully and left unchanged. No commit, push, branch change,
+network access, new dependency, real market data, credential access, or protected-path edit
+was performed.
 
 ## Files changed
 
 - `.ai/LAST_REPORT.md`
+- `docs/design/11-strategy-and-ai-analysis.md`
+- `docs/design/12-backtest-and-evaluation.md`
+- `docs/dev/setup.md`
+- `src/aitrader/backtest/engine.py`
+- `src/aitrader/backtest/manifest.py`
+- `src/aitrader/backtest/walkforward.py`
+- `src/aitrader/cli/main.py`
 - `src/aitrader/data/adjusted.py`
-- `tests/unit/data/test_adjusted.py`
+- `src/aitrader/strategy/__init__.py`
+- `src/aitrader/strategy/base.py`
+- `src/aitrader/strategy/momentum.py`
 - `tests/integration/test_adjusted_backtest.py`
+- `tests/integration/test_walkforward.py`
+- `tests/unit/strategy/test_momentum.py`
 
 ## Commands run
 
-All uv commands used `UV_OFFLINE=1 UV_CACHE_DIR=.uv-cache`. No network access or dependency
-installation was needed.
+All successful `uv run` commands used `UV_CACHE_DIR=.uv-cache UV_OFFLINE=1` to keep cache
+writes inside the repository and prohibit downloads. The initial command using uv's default
+cache failed with `Operation not permitted`; using the repository-local cache resolved this.
 
-- `uv run ruff format src/aitrader/data/adjusted.py tests/unit/data/test_adjusted.py tests/integration/test_adjusted_backtest.py`
-  — PASS: 3 files already formatted after the final code changes.
-- `uv run ruff check` — PASS: all checks passed.
-- `uv run ruff format --check` — PASS: 139 files already formatted.
-- `uv run mypy` — PASS: no issues in 138 source files.
+- `uv run ruff check` — PASS: All checks passed.
+- `uv run ruff format --check` — PASS: 143 files already formatted.
+- `uv run mypy` — PASS: no issues in 142 source files.
 - `uv run lint-imports` — PASS: 9 contracts kept, 0 broken.
-- `rm -rf .pytest_cache && uv run pytest -p no:cacheprovider tests/unit/data`
-  — PASS: 98 passed in 3.18 seconds, with the cache directory absent.
-- Temporarily replaced only `@settings(max_examples=60, deadline=None)` with
-  `@settings(max_examples=3000, deadline=None)` and ran
-  `uv run pytest -p no:cacheprovider tests/unit/data/test_adjusted.py::test_no_lookahead_across_vendor_download_dates`
-  — PASS: 1 passed in 43.54 seconds (3,000 generated examples plus the explicit regression).
-  A Python `try/finally` wrapper restored the original file immediately afterward;
-  `max_examples=60` is retained in the final diff. Assertions were unchanged.
-- `uv run pytest --cov=aitrader` — PASS: 973 passed, 1 warning in 11.46 seconds.
-- `uv run coverage report --include='src/aitrader/*' --fail-under=90` — PASS:
-  3,862 statements and 938 branches; none missed. Every reported module remains at 100%.
-- `uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir bt-before --start 2023-01-03 --end 2024-12-31`
-  — PASS before any file edits: `bt-6bdb9e53258d07d9`.
-- `uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir bt-a --start 2023-01-03 --end 2024-12-31`
-  — PASS after changes: `bt-6bdb9e53258d07d9`.
-- `uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir bt-b --start 2023-01-03 --end 2024-12-31`
-  — PASS: same run ID.
-- `diff -r bt-a bt-b` and `diff -r bt-before bt-a` — PASS: all output files byte-identical.
-- `cmp bt-before/equity.csv bt-a/equity.csv` and Python equality comparison of the complete
-  parsed `metrics.json` objects — PASS: equity bytes and all metrics unchanged.
-- Removed `bt-before`, `bt-a` and `bt-b` after the comparisons.
-- `git diff --check` — PASS: no whitespace errors.
+- `uv run pytest --cov=aitrader` — PASS: 1,006 tests passed; one existing SQLite ResourceWarning.
+- `uv run coverage report --include='src/aitrader/*' --fail-under=90` — PASS: 4,070 statements and 984 branches, no misses or partial branches; 100% for every measured source module.
+- `uv run ruff format` and `uv run ruff check --fix` — PASS: formatting/import cleanup during development; no checks were disabled.
+- `uv run pytest tests/integration/test_walkforward.py tests/unit/strategy/test_momentum.py -s` — PASS: 29 tests in 8.09 seconds on the final targeted run; the synthetic walk-forward call took **0.891 seconds** (five symbols, over 400 raw/adjusted sessions, 2/1/2-month windows, four S1 variants).
+- `uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir bt-before --start 2023-01-03 --end 2024-12-31` — PASS, executed before source changes.
+- `uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir bt-a --start 2023-01-03 --end 2024-12-31` — PASS.
+- `uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir bt-b --start 2023-01-03 --end 2024-12-31` — PASS.
+- `diff -r bt-a bt-b` — PASS: all three output files byte-identical.
+- `diff bt-before/equity.csv bt-a/equity.csv` — PASS: byte-identical.
+- `diff bt-before/metrics.json bt-a/metrics.json` — PASS: byte-identical, including every existing metric.
+- `shasum -a 256` on the compared files — PASS: equity SHA-256 `1ce0a8f6a09cafd3c2e0dcf3be8e1e2919d304af941b8e4eee3bae2cbef39363`; metrics SHA-256 `d4592f8d1aac44388280c685bd1470b9245372f2dda3d95c05658019a83d09ca`, identical before/after.
+- `git diff --check` — PASS.
+- Removed only the generated `bt-before/`, `bt-a/`, and `bt-b/` comparison directories after verification.
 
-## Review round 1
+Expected/actual: unchanged S2 fixture equity and metrics, deterministic repeat runs, and
+training-only parameter selection were expected; all were observed. The backtest manifest
+changes as specified because `corporate_actions.unexplained_minor` is now present.
+Early development lint/type errors and a synthetic skip-test fixture that unintentionally
+closed exactly on its SMA were corrected before the final successful checks.
 
-Finding 1 (including the correction): allowed ratios are deduplicated reduced fractions from
-`n/1`, `1/n` for 2 through 100 and `p/q` for 1 through 10. The shared detector compares exact
-relative differences against the existing tolerance, stores `(p, q)` only for detected splits,
-and uses `Decimal(p) / Decimal(q)` as their price factor. PIT volume accumulates `q/p` with
-`Fraction`, rounds that exact rational to an integer with ties-to-even, then converts to
-`Decimal`. This avoids decimal approximation even for nonterminating ratios such as 2/3.
-Ingest still delegates to this detector; fetch-report serialization has not changed.
-
-Finding 2: `TemporaryDirectory()` now uses its default location, without a relative directory
-argument. The data suite passed after explicitly removing `.pytest_cache` and disabling the
-cache provider.
-
-Expected / Actual: the reported multi-split example now preserves the exact 62.5-share tie
-and returns 62; approved ratios snap correctly, and 0.6180/0.7310 remain unexplained. The
-3,000-example run, exact-ratio unit tests and held/pending integration cases all passed.
+GUI operations: NOT_RUN; this task adds offline library and CLI behavior, with no GUI.
+Separate build command: NOT_RUN; no independent build command is required by AGENTS.md.
 
 ## Acceptance criteria
 
-- [x] Corrected split rules and report compatibility —
-  `test_split_snaps_only_to_allowed_ratios` checks all seven designer-specified values,
-  100:1 and 1:100 bounds, rejected out-of-range values, exact stored ratios/factors, zero
-  split cash and matching ingest output. Existing threshold tests still check exact and
-  neighboring classification boundaries; split factor expectations now reflect snapping.
-- [x] Exact volume rounding — the required failing input is an explicit `@example` on
-  `test_no_lookahead_across_vendor_download_dates`. The independent price/volume/OHLC
-  assertions are unchanged. `test_nonterminating_split_ratio_rounds_volume_exactly`
-  checks four ties under 2/3, including rounds both up and down to even.
-- [x] No look-ahead — temporary 3,000-example run passed; normal limit remains 60.
-- [x] Fail closed — `test_held_and_pending_unsupported_actions_fail_closed` additionally
-  checks reclassified 0.6180 and 0.7310 actions for both held and pending positions.
-- [x] Fresh-checkout compatibility — 98 data tests passed without `.pytest_cache` and
-  with `-p no:cacheprovider`.
-- [x] Original TASK-007a behavior preserved — the full suite passes, including dividend
-  cash/tax reconciliation, ex-date eligibility, benchmark dividends, raw execution,
-  unsupported-action CLI exit code 4, both/partial/flat layouts and synthetic dual-series
-  reproducibility. Original detection, source matching and PIT caching tests also pass.
-- [x] Fixture compatibility and reproducibility — both post-change runs and the pre-change
-  baseline have byte-identical outputs; all metric values are identical.
-- [x] All six mandatory checks pass; every module retains 100% statement/branch coverage.
+- [x] 1. Minor adjustments with a held position — `test_minor_unexplained_boundary_and_no_cash` covers 1.0019, exactly 1.002, and 1.0021; allowed runs have identical cash and equity to raw-only runs, and correct nested manifest counts. Existing unsupported-action tests still pass for held and pending positions.
+- [x] 2. Next session — `test_next_session_context_includes_monday_holiday` checks Wednesday/Thursday and Friday 2023-01-13 resolving to Tuesday 2023-01-17.
+- [x] 3. S1 unit rules — `tests/unit/strategy/test_momentum.py` covers weekly versus non-review sessions, Good Friday, ISO week/year transition, absent next-session fallback, close just above/equal/below SMA, ties, skip, equivalent selection and eligible held representatives, ineligible held representatives, exit reasons/quantity, cent-rounded entry notional and ATR stop, holding without rebuying, cash when fewer qualify, missing history, nonpositive stops, and hash changes for every parameter field.
+- [x] 4. S1 end to end — `test_s1_end_to_end` uses five synthetic raw/adjusted symbol series with an equivalents pair and over 400 sessions; fills occur, no equivalent pair is held together, every submitted strategy intent originates on a weekly review, and both runs have identical manifest/metrics/equity bytes.
+- [x] 5. Windows — `test_month_arithmetic`, `test_fold_list_and_holdout_boundary`, and `test_cli_errors` cover month ends/leap day, hand-checked fold dates, exclusive ends with no hold-out sessions, positive window lengths, and CLI exit 4 when no fold fits. The end-to-end case also checks the weekend start normalization and strict hold-out boundary.
+- [x] 6. Selection — `test_selection_known_scores_and_grid` and `test_runner_selects_stub_variants_on_training_only` check Sharpe priority, total-return tie-breaking, stable grid-order ties, and None below negative numeric Sharpe. Stub test-window scores deliberately differ; training scores still select the test variant. The runner test also verifies a single shared PointInTimeBars instance across folds/variants.
+- [x] 7. Walk-forward end to end — `test_walkforward_e2e_chain_and_determinism` checks every combined daily equity value against independently rerun selected test windows, SPY B0 over the same sessions, manifest boundaries/grid size, output existence, and identical bytes on repeat. `test_chain_hand_calculation` verifies 100 -> 110 -> 99, then a new fold's +20% gives 118.8. `test_cli_walkforward` runs both S1 and S2.
+- [x] 8. Fixture regression — pre-change and post-change equity.csv and metrics.json have identical bytes and hashes; repeated post-change output directories also match in full and are removed afterward.
+- [x] 9. Required checks/coverage — all six required commands pass; every measured source module remains at 100% statement and branch coverage, with no test skipping, weakening, or expected-failure markers added.
 
 ## Deviations from the task or the design
 
-None. Existing boundary expectations for split factors were changed to the exact snapped
-values required by the correction; classification and other assertions were retained.
+None. Month offsets stay anchored to the original fold start, with month-end clamping, to
+keep consecutive test windows adjacent. Periods in walkforward.json label their ends
+`end_exclusive` so hold-out exclusion is explicit. A single point-in-time snapshot is shared
+across all training/test runs and manifest generation. Only the two authorized implementation
+notes were added to the design documents.
 
 ## Open issues and questions
 
-No blocking issues or designer decisions remain.
+No designer decision is required for this task.
 
-- One `ResourceWarning` for an unclosed SQLite connection was emitted during
-  `tests/unit/storage/test_storage.py::test_crash_after_the_broker_accepted_recovers_from_the_database`.
-  This is the explicitly deferred storage warning; no storage code was changed.
-- GUI verification: NOT_RUN; CLI/library changes were verified with offline automated tests.
-- Intentionally not implemented: benchmark split support and cache rebuild optimization,
-  as excluded from this review round. Original dividend/pay-date/tax assumptions are unchanged.
-- Intentionally not run: network/data downloads, real-market-data research, live trading,
-  protected-path edits, Git commit/push/branch changes. The operator handles Git recording
-  under `AGENTS.md` and `CLAUDE.md`.
+The existing, out-of-scope SQLite `ResourceWarning: unclosed database` appeared once in the
+final full suite (`tests/unit/storage/test_storage.py::test_transactions_roll_back_on_errors`,
+`storage/database.py:143`). Reproduction: `UV_CACHE_DIR=.uv-cache UV_OFFLINE=1 uv run pytest --cov=aitrader`;
+the warning's collection site can vary with garbage collection. No storage code was changed.
+
+The CLI reads the repository commit using `/usr/bin/git` on this Mac and reports DataError
+(exit 4) if commit lookup fails; other host layouts were not verified. The synthetic timing
+is a local measurement, not a ten-year real-data performance claim.
+
+Intentionally not run: locked hold-out evaluation, real-data research, go/no-go decisions,
+live/broker endpoints, deployment, and operator Git actions, as specified for later cycles.

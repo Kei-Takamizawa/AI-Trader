@@ -25,6 +25,8 @@ Implemented in TASK-007a: point-in-time adjusted signals, raw fills and estimate
 
 ## 3. Walk-forward protocol
 
+Implemented in TASK-007b.
+
 ```
 |---- train 36 months ----|-- test 6 months --|
           |---- train 36 months ----|-- test 6 months --|
