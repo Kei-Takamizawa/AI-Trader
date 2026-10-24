@@ -241,3 +241,19 @@ not use the pytest cache). Use a location that always exists. Either take `tmp_p
 (session-scoped, so Hypothesis allows it) and call `mktemp()` per example, or use
 `TemporaryDirectory()` with no `dir`. Do not depend on the current directory. Check this locally
 from a clean state: `rm -rf .pytest_cache && uv run pytest -p no:cacheprovider tests/unit/data`.
+
+### Review round 1, correction to finding 1 step 1 (designer) — replaces the snap rule
+
+The operator and Codex were right: with `p, q <= 100`, fractions are so dense that almost any
+factor (0.6180 snaps to 55/89) falls within `RATIO_TOLERANCE`, so `UNEXPLAINED` could never
+happen. Use this rule instead. Real splits are `n:1`, `1:n` or small ratios such as 3:2.
+
+- **Allowed split ratios:** `n/1` and `1/n` for `2 <= n <= 100`, plus `p/q` for `1 <= p, q <= 10`.
+- A factor classified `SPLIT` snaps to the allowed ratio whose relative difference
+  `abs(ratio / factor - 1)` is at most `RATIO_TOLERANCE`. No two allowed ratios are that close to
+  each other, so the match is unique. If no allowed ratio is within the tolerance, the action is
+  `UNEXPLAINED`.
+- Required tests (designer-checked values): `0.50001 -> (1, 2)`, `10 -> (10, 1)`,
+  `0.66667 -> (2, 3)`, `1.5 -> (3, 2)`, `0.04 -> (1, 25)`; `0.6180` and `0.7310 -> UNEXPLAINED`.
+
+Everything else in finding 1 (steps 2 to 5) and finding 2 is unchanged.
