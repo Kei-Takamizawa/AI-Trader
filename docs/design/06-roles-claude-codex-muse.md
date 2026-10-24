@@ -2,7 +2,7 @@
 
 ## 1. Who does what
 
-> **Current phase (owner instruction, 2026-10-23):** Claude implements product and test code until the owner switches to Codex. Until then the Codex loop below is not active, and the rules for the implementer apply to Claude. When the owner switches, `AGENTS.md` and `.ai/CURRENT_TASK.md` are created and the table applies as written.
+> **Current phase (owner instruction, 2026-10-24):** the Codex loop is active. Codex implements and tests; Claude designs, reviews and merges; Claude Code on the owner's PC is the operator. From 2026-10-23 to 2026-10-24 Claude implemented TASK-002 to TASK-006, TASK-009 and TASK-010 itself (owner instruction 2026-10-23).
 
 | Role | Actor | Responsibilities | Not allowed |
 |---|---|---|---|
@@ -50,21 +50,21 @@ Claude may merge a pull request only when **all** hold:
 
 PRs that touch a protected area need the owner's explicit approval in the PR before merging.
 
-## 4. Files that will be created after design approval
+## 4. Files that configure the loop
 
-These files configure the automated loop. They are **not** created yet, so the loop cannot start before you approve the design.
+Created on 2026-10-24 when the owner switched the implementer to Codex.
 
 | File | Purpose |
 |---|---|
 | `CLAUDE.md` | Rules for Claude: design/review role, merge rule, protected paths, how the operator starts Codex (approval mode, sandbox), report format. |
 | `AGENTS.md` | Rules for Codex: coding standards, test requirements, forbidden actions, how to write `.ai/LAST_REPORT.md`, stop-and-report conditions (BLOCKED). |
-| `.ai/CURRENT_TASK.md` | The single active task specification (first one: document 10). |
+| `.ai/CURRENT_TASK.md` | The single active task specification (first Codex task: TASK-007a). |
 | `.ai/LAST_REPORT.md` | Codex's report: changed files, commands run, test results, open issues. |
 
 ## 5. Guardrails for AI coding agents
 
 - **No production order authority, from the start.** Claude (cloud and PC operator) and Codex never receive Webull production App Keys, App Secrets or tokens, and never run code against Webull production endpoints. See section 7.
-- Secrets never enter the repository. A secret-scanning check runs in CI.
+- Secrets never enter the repository. A secret-scanning check in CI is planned but **not in place yet** (open item in `docs/status.md`); until then the reviewer checks every diff for credentials.
 - Codex works only inside the repository folder and the cycle branch.
 - Tests may not be skipped, disabled or weakened to make CI pass; Claude's review checks for this.
 - Changing a risk threshold is a configuration change with its own PR and owner approval, never a side effect of another task.

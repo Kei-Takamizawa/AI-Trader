@@ -5,7 +5,8 @@ Implementer: Claude (owner instruction 2026-10-23). Owner signed up for the Alpa
 data quality, DATA-3), 11 (§2 universe), 12 (§2 adjusted vs. raw prices, §5 data quality).
 
 Status: **code done** (2026-10-24); 100% coverage, all checks green. **The real download is
-pending:** it runs in a new session after the owner adds the key as environment secrets.
+pending:** the operator runs it on the owner's PC once the owner has set the key there as
+user environment variables (`CLAUDE.md`, "Credentials").
 
 Facts used (Alpaca documentation, read 2026-10-24): `GET https://data.alpaca.markets/v2/stocks/bars`;
 headers `APCA-API-KEY-ID` and `APCA-API-SECRET-KEY`; `timeframe=1Day`; `adjustment` = `raw`,
@@ -44,6 +45,6 @@ store can move to Parquet later behind the same `DailyBarSource` interface.
 
 - Tests with recorded responses cover pagination, retries, the host allow-list, error mapping,
   decimal parsing and session dates; no network in tests.
-- The real download runs in a session where the owner has added the key as environment secrets.
+- The real download runs on the operator PC with the key in user environment variables.
 - Real market data is never committed to git (`/data/` is ignored).
 - ruff, mypy (strict), lint-imports and pytest green; coverage ≥ 90%.
