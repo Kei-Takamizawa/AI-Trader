@@ -158,6 +158,22 @@ With Webull support or the owner's account (Phase 6, after approval to open the 
 | WB-8 | Tokutei account with or without withholding — what the API needs (`account_tax_type`). |
 | WB-9 | Meaning of `cash_balance` and `buying_power` for unsettled sale proceeds in a cash account, and whether position `cost_price` is per share (U16). |
 
+### 8.1 First sandbox results (2026-10-24, SDK 3.0.4, adapter at d6dcf34)
+
+One run of `aitrader sandbox check` against `jp-openapi-alb.uat.webullbroker.com` with one of the public test accounts. One whole-share LIMIT buy far below the market was placed and cancelled; nothing was filled.
+
+| Item | Result |
+|---|---|
+| SB-6 host | The documented UAT trading host answers (DNS, TLS, HTTP). |
+| Token | Token config returns `token_check_enabled: false`; requests without 2FA succeed. An earlier run with wrong credential values returned 401 `UNAUTHORIZED` on every call. |
+| SB-1 accounts, balance | Shapes match `docs/reference/webull-trading-api-v3.md`. |
+| SB-1 positions | `available_quantity` and `instrument_id` are **absent**, although the reference marks them required. |
+| SB-1 instruments | HTTP 200, but none of the documented fields were found: the response shape differs from the reference (to be captured). |
+| SB-2 whole-share LIMIT | preview → place → status `SUBMITTED` → cancel → status **`CANCELED`** (one L; the reference says `CANCELLED`). A second cancel of a cancelled order returns 417 `OPENAPI_ORDER_CANNOT_OPERATE`. |
+| SB-2 fractional | 0.01 share at USD 1.00 and the below-USD-1 order are both rejected with 417 `OPENAPI_FRACTION_V2_BUY_AMOUNT_TOO_SMALL` (the amount rule, not the marketable-limit rule). |
+| SB-3 | A duplicate `client_order_id` is rejected with 417 `OPENAPI_REPEAT_REQUEST`; an unknown `client_order_id` returns 200 with no order. |
+| Latency | 250–630 ms per call; cancel 1.6 s; first call including token set-up about 1.9 s. |
+
 ## 9. Sources (accessed 2026-10-23)
 
 Webull Securities Japan website:

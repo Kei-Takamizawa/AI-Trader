@@ -450,3 +450,37 @@ the rest of round 4 (terminal-only fills, `:final` ID, 7-day lookback, F2 settle
 
 Keep the uncommitted round 4 work in the tree and build on it. Acceptance criteria 1–8 still
 apply.
+
+## Review round 6 (designer, 2026-10-24) — fixes from the first successful sandbox run
+
+The second sandbox run (adapter d6dcf34) authenticated and placed, checked and cancelled one
+whole-share order. Results are in document 14 §8.1, and `docs/reference/webull-trading-api-v3.md`
+now carries "Observed in the sandbox" notes. Implement these on top of round 5.
+
+1. **`CANCELED`:** map both `CANCELED` and `CANCELLED` to `OrderStatus.CANCELLED`, in parsing,
+   R2's terminal logic and the sandbox check.
+2. **Positions:** `available_quantity` and `instrument_id` become optional; they are not used for
+   mapping. The sandbox report still records whether each is present.
+3. **Instruments shape is unknown.** Do not guess a new shape. In the sandbox report, for the
+   instruments call only, record the JSON root type (`object` or `array`), the sorted top-level key
+   names when the root is an object, and the sorted key names of the first element of the first
+   list found at the root or under any top-level key. Record **names only, never values.** The
+   SPY flags check stays `fail` / `unavailable` until a later task maps the real shape. Nothing in
+   `BrokerPort` depends on instruments.
+4. **Known codes:** add `OPENAPI_REPEAT_REQUEST` (duplicate `client_order_id`),
+   `OPENAPI_ORDER_CANNOT_OPERATE` (operation not allowed in the order's state, for example a
+   cancel of a cancelled order) and `OPENAPI_FRACTION_V2_BUY_AMOUNT_TOO_SMALL` (fractional buy
+   below the minimum amount). Use document 14 §8.1 as the source.
+5. **Sandbox check, SB-2 whole:** do not send a second cancel once the status is terminal. Cancel
+   only while the order is non-terminal, then confirm by status.
+6. **Sandbox check, SB-2 fractional non-marketable:** 0.01 share at USD 1.00 was rejected for the
+   minimum amount, so it did not test the marketable-limit rule. Use quantity `1.5` at
+   `far_limit_price` (USD 1.50 ≥ USD 1). Expected: rejected (`rejected_as_expected`, `pass`). If
+   accepted, cancel at once and mark `accepted_unexpectedly` / `finding`, as before. The
+   below-USD-1 check is unchanged.
+7. **Submit idempotency on `OPENAPI_REPEAT_REQUEST`:** if place returns this code, look the order
+   up by `client_order_id`. If found, return its ack (the earlier submit went through). Otherwise
+   raise `OrderRejectedError` as now. Add a contract-level test with the fake transport.
+
+Tests for each item use the fake transport with the observed shapes and codes. Acceptance
+criteria 1–8 still apply.

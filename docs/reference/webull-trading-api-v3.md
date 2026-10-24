@@ -22,7 +22,9 @@ No credentials, account numbers or balances appear in this file. Example values 
   The trading FAQ also documents 403 for missing or invalid credentials. 429 is not documented.
 - Documented codes: `UNAUTHORIZED` (401), `INVALID_PARAMETER` (417), `SYSTEM_ERROR` (500),
   `OPENAPI_NO_NIGHT_TRADING_TIME` (417, night orders outside the night session),
-  `INVALID_TOKEN` (usually a signature mismatch, per the FAQ). No code is documented for a
+  `INVALID_TOKEN` (usually a signature mismatch, per the FAQ). Observed in the sandbox:
+  `OPENAPI_REPEAT_REQUEST` (duplicate `client_order_id`), `OPENAPI_ORDER_CANNOT_OPERATE` (cancel of a
+  cancelled order), `OPENAPI_FRACTION_V2_BUY_AMOUNT_TOO_SMALL` (fractional buy below the minimum amount). No code is documented for a
   duplicate `client_order_id`, an unknown order or a fractional-rule reject.
 - `client_order_id`: at most 32 characters from `A-Z a-z 0-9 - _`, unique per account.
 
@@ -74,11 +76,15 @@ Required: `currency`, `quantity` (decimal for US fractional), `available_quantit
 `market_value`, `symbol`, `instrument_id`, `instrument_type` (`EQUITY`, `OPTION`), `last_price`,
 `cost_price`, `unrealized_profit_loss`, `base_currency`, `fx_rate`, `base_currency_market_value`.
 Optional: `position_id`, `account_tax_type`, `legs` (options only).
+**Observed in the sandbox (2026-10-24): `available_quantity` and `instrument_id` were absent.** Treat both as optional.
 
 `cost_price` is documented only as "cost basis". Whether it is per share or a total is
 **not stated**: see the mapping rule in review round 2.
 
 ### Instrument object (`data[]`)
+
+**Observed in the sandbox (2026-10-24): HTTP 200, but none of these fields were found where expected.** The real shape is still to be captured (TASK-008 review round 6).
+
 
 `symbol`, `instrument_id`, `category`, `status` (`OC` tradable, `CO` liquidate only,
 `NT` not tradable), `fractionable` (boolean), `shortable`, `marginable`,
@@ -116,6 +122,7 @@ or absent when nothing filled), `filled_time_at` (time of the last execution), `
 `receivable_value`).
 
 `status` values: `PENDING`, `SUBMITTED`, `PARTIAL_FILLED`, `FILLED`, `CANCELLED`, `FAILED`.
+**Observed in the sandbox (2026-10-24): a cancelled order reports `CANCELED` (one L).** Accept both spellings.
 There is no separate "rejected" or "expired" value; the documentation does not say how a DAY
 order that expires is shown.
 
