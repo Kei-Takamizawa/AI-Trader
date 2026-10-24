@@ -55,6 +55,9 @@ def test_unmodified_project_keeps_all_contracts(tmp_path: Path) -> None:
         ("execution/manager.py", "import aitrader.broker.sim"),
         ("indicators/__init__.py", "import aitrader.strategy"),
         ("data/bars.py", "import pandas"),
+        ("broker/sim/__init__.py", "import webull"),
+        ("broker/port.py", "import webull"),
+        ("execution/manager.py", "import aitrader.broker.webull"),
         ("risk/engine.py", "import exchange_calendars"),
     ],
 )

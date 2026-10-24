@@ -13,6 +13,8 @@ import typer
 
 from aitrader.backtest import build_manifest, metrics_for, run_backtest, write_results
 from aitrader.backtest.walkforward import run_walkforward, write_walkforward
+from aitrader.broker.webull import SandboxCredentials, WebullBroker
+from aitrader.broker.webull.check import SandboxCheck
 from aitrader.clock import CalendarError, TradingCalendar, WallClock
 from aitrader.config import (
     ConfigError,
@@ -23,6 +25,7 @@ from aitrader.config import (
     load_settings,
     load_universe,
 )
+from aitrader.config.loader import load_webull_sandbox_settings
 from aitrader.data import (
     AlpacaDataClient,
     DailyBarSource,
@@ -48,6 +51,8 @@ config_app = typer.Typer(help="Configuration commands.", no_args_is_help=True)
 app.add_typer(config_app, name="config")
 data_app = typer.Typer(help="Market data commands (read-only).", no_args_is_help=True)
 app.add_typer(data_app, name="data")
+sandbox_app = typer.Typer(help="Operator-only Webull UAT checks.")
+app.add_typer(sandbox_app, name="sandbox")
 
 
 def _version() -> str:
@@ -284,3 +289,29 @@ def live() -> None:
     """Start LIVE trading. Disabled in this build."""
     typer.echo("LIVE is disabled in this build", err=True)
     raise typer.Exit(EXIT_LIVE_DISABLED)
+
+
+@sandbox_app.command("check")
+def sandbox_check(
+    config_dir: Annotated[Path, typer.Option(help="Configuration directory.")] = Path("config"),
+    out_dir: Annotated[Path, typer.Option(help="Sanitised sandbox reports.")] = Path(
+        "reports/sandbox"
+    ),
+) -> None:
+    """Probe shared sandbox accounts. Only the operator runs this against Webull."""
+    try:
+        credentials = SandboxCredentials()
+        settings = load_webull_sandbox_settings(config_dir)
+        clock = WallClock()
+        broker = WebullBroker(clock, credentials=credentials, settings=settings)
+    except ConfigError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(EXIT_CONFIG_ERROR) from exc
+    check = SandboxCheck(broker, clock)
+    broker.set_observer(check.observe)
+    try:
+        path, exit_code = check.run(out_dir)
+    finally:
+        broker.close()
+    typer.echo(f"sandbox report: {path}")
+    raise typer.Exit(exit_code)

@@ -130,6 +130,8 @@ Note on PAPER market data: using Webull's own market data in PAPER would require
 
 ## 8. Items to verify after design approval
 
+SB-1, SB-2 (subset), SB-3 and SB-6 are automated by `aitrader sandbox check` (TASK-008); results are recorded in `reports/sandbox/`.
+
 In the sandbox (public test accounts, no owner account needed):
 
 | ID | Check |

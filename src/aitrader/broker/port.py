@@ -36,7 +36,7 @@ class BrokerCapabilities(BaseModel):
 class AccountSnapshot(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    account_id: str = Field(min_length=1)
+    account_id: str = Field(min_length=1, repr=False)
     environment: BrokerEnvironment
     ts: UtcDatetime
     cash_usd_settled: NonNegativeDecimal
@@ -93,6 +93,9 @@ class BrokerFill(BaseModel):
 class BrokerError(Exception):
     """Base class of every error a broker adapter raises."""
 
+    http_status: int | None = None
+    code: str | None = None
+
 
 class BrokerUnavailableError(BrokerError):
     """Timeout, lost connection or server error: the outcome of the call is unknown."""
@@ -104,7 +107,7 @@ class OrderRejectedError(BrokerError):
 
     def __init__(self, code: str, message: str = "", *, known: bool = True) -> None:
         super().__init__(f"{code}: {message}" if message else code)
-        self.code = code
+        self.code: str = code
         self.message = message
         self.known = known
 

@@ -10,6 +10,7 @@ dependencies = [
     "pydantic-settings>=2.6,<3",
     "pyyaml>=6.0,<7",
     "typer>=0.27,<1",
+    "webull-openapi-python-sdk==3.0.4",
 ]
 
 [project.scripts]
@@ -142,6 +143,8 @@ forbidden_modules = [
 name = "Only aitrader.broker.webull may import the Webull SDK"
 type = "forbidden"
 source_modules = [
+    "aitrader.broker.port",
+    "aitrader.broker.sim",
     "aitrader.ai",
     "aitrader.app",
     "aitrader.backtest",
@@ -258,7 +261,7 @@ source_modules = [
     "aitrader.risk",
     "aitrader.strategy",
 ]
-forbidden_modules = ["aitrader.broker.sim"]
+forbidden_modules = ["aitrader.broker.sim", "aitrader.broker.webull"]
 
 [[tool.importlinter.contracts]]
 name = "The indicators package depends only on the domain package"
