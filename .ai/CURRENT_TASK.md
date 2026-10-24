@@ -211,3 +211,88 @@ records an `outcome` and a `result`:
   not part of this task; leave `[build-system]` unchanged. It is tracked in `docs/status.md`.
 - Acceptance criteria 1–8 still apply. Add to AC 2: the resolved-host read-back test from B1.
   Add to AC 5: fake-transport tests for every `outcome` listed in B2 and the exit codes 0 / 1 / 2.
+
+## Review round 2 (designer, 2026-10-24) — answer to BLOCKED B3, and SDK logging
+
+Codex was right again: SDK 3.0.4 returns raw HTTP responses and has no response models. The
+designer chose option (1). The response shapes are now in
+**`docs/reference/webull-trading-api-v3.md`**, restated from Webull's official reference pages
+(sources listed there). Build the fake transport and the parsers from that file and from the SDK
+source for request building. Do not invent fields that are not in it. Where the documentation is
+silent, follow the rules below, which replace the matching parts of A.
+
+### Parsing
+
+- Read the body with the SDK's response object (`.json()` or the equivalent the SDK exposes).
+  Every number is a JSON string → `Decimal`. An absent, `null` or empty optional field is "absent".
+  A required field that is missing or not parseable raises `BrokerUnavailableError` with the field
+  name only (no body, no values).
+- `account_id` for every call comes from `WEBULL_SANDBOX_ACCOUNT_ID`. The account list is used
+  only by the sandbox check (SB-1) to confirm that this ID is listed.
+
+### Mapping rules where the documentation is silent
+
+1. **`account()`**: the balance has no settled/unsettled split. For the `USD` item of
+   `account_currency_assets`:
+   - `cash_usd_settled = max(0, min(cash_balance, buying_power))`;
+   - `cash_usd_unsettled = max(0, cash_balance - cash_usd_settled)`;
+   - `cash_jpy = max(0, cash_balance of the JPY item)`;
+   - a missing currency item counts as zero.
+   This is a conservative assumption. The designer has recorded it in document 14 as U16 [U]
+   with check WB-9; do not edit document 14 for this.
+2. **`positions()`**: only `instrument_type == EQUITY` and `currency == USD`. Set
+   `cost_usd = cost_price × quantity`, treating `cost_price` as per share. This is also an
+   assumption, also covered by U16. Positions with a quantity of zero are dropped.
+3. **Order status** (`status` → `OrderStatus`): `PENDING` → `SUBMITTED`; `SUBMITTED` →
+   `SUBMITTED`; `PARTIAL_FILLED` → `PARTIALLY_FILLED`; `FILLED` → `FILLED`; `CANCELLED` →
+   `CANCELLED` (keep any `filled_quantity`); `FAILED` → `REJECTED`. Any other value → `UNKNOWN`,
+   with the raw status string (not the body) in a log message at WARNING level.
+   - `average_fill_price` is `filled_price` only when `filled_quantity > 0` and
+     `filled_price > 0`, else `None`.
+   - `updated_at` is `filled_time_at` if present, else `place_time_at`.
+4. **`open_orders()`** and **`fills_since(ts)`** read every page using `pagination_key`, and stop
+   after 50 pages (raise `BrokerUnavailableError` if more remain). `fills_since` calls order
+   history with `start_time = ts`, formatted as `yyyy-MM-dd'T'HH:mm:ss.SSS'Z'`. It refuses a `ts`
+   older than 6 months with `ValueError`. Each order item with `filled_quantity > 0` produces at
+   most one `BrokerFill`, using the fill ID rule already in A. `fees` and `commission` map to
+   `TradeCost` entries only if `actual_value` / `actual_commission` is present; otherwise there
+   are no costs.
+5. **`order_status(id)`**: order detail by `client_order_id`, using the first item of `orders`
+   whose `client_order_id` matches. An empty `orders`, or HTTP 417 on this call, raises
+   `OrderNotFoundError`. The 417 `error_code` is kept on the exception for the sandbox report.
+   No code is documented for "not found", so the sandbox check records the real one.
+6. **HTTP status → error**, for every call: 401 and 403 → `BrokerAuthError`; 429 →
+   `RateLimitedError`; 5xx, timeouts and connection errors → `BrokerUnavailableError`. On preview,
+   place and cancel, 417 → `OrderRejectedError(error_code, message, known=error_code in
+   KNOWN_CODES)`. On other calls, 417 → `BrokerUnavailableError` carrying the code.
+   - The `message` from Webull may be kept in the exception, after removing any occurrence of the
+     app key, app secret or account ID.
+   - `known_codes.py` lists exactly the codes in the reference file: `UNAUTHORIZED`,
+     `INVALID_PARAMETER`, `SYSTEM_ERROR`, `OPENAPI_NO_NIGHT_TRADING_TIME` and `INVALID_TOKEN`.
+     Each has a one-line meaning and the source URL.
+7. **Submit** sends the order request exactly as in the reference file's "Order request" table:
+   `entrust_type = QTY`, never `AMOUNT`, never `SHORT`. The quantity string has at most 5
+   decimals and no exponent (`format(q, "f")` after quantizing to the step). The idempotent
+   resubmit case (same `client_order_id` sent again) is handled by first calling
+   `order_status(client_order_id)`. If the order exists, return its ack without a second place.
+   Otherwise place once.
+
+### SDK logging (operator's finding)
+
+`webull/core/client.py` logs full response headers and bodies at DEBUG, and `vars(exception)` at
+ERROR. Request headers include `x-app-key` and `x-app-secret`.
+
+- At `WebullBroker` construction, set `logging.getLogger("webull")` to `logging.CRITICAL + 1`,
+  set `propagate = False` and attach a `logging.NullHandler()`. Do the same for any other logger
+  name the SDK uses; find them in the SDK source and list them in LAST_REPORT.
+- AC 3 is extended: a test sets the root logger to DEBUG with `caplog`, drives submit, a 401, a
+  417 and a 500 through the fake transport, and asserts that none of the three secret values
+  appears in `caplog.text`, in exception strings or in the written report.
+
+### Sandbox check report additions
+
+For each call, the report also records `http_status` and `error_code` (never the message or the
+body). It also records these "shape findings", with no values: whether each required field in
+the reference file was present (field name → true/false), the observed order `status` strings,
+and the `error_code` seen for the duplicate `client_order_id` and for an unknown
+`client_order_id` lookup (`aitsb-unknown-<uuid8>`).

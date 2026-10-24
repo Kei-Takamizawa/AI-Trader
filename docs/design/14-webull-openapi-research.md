@@ -115,6 +115,7 @@ Worked example for a ¥50,000 account (USD/JPY 155 [A]):
 | U13 | **Agentic tools** (MCP, CLI, Skills) can place orders when connected with trading permission. | [V] | Never connected to Claude, Codex or Muse with a production account (section 7). |
 | U14 | **Disclaimer:** Webull disclaims responsibility for losses from automated or AI-driven decisions. | [V] | Owner accepts this in the LIVE approval record. |
 | U15 | **Documentation errors** exist (registration number, inconsistent host names, an example labelled HMAC-SHA1 vs HMAC-SHA256). | [V] | Every behaviour we depend on is verified in the sandbox (section 8) and, where needed, with Webull support. |
+| U16 | **Balance and position semantics:** the balance gives per-currency `cash_balance` and `buying_power` but no settled/unsettled split; position `cost_price` is not stated as per share or total (reference: `docs/reference/webull-trading-api-v3.md`). | [U] | Sandbox adapter assumes settled USD = min(cash, buying power) and per-share `cost_price` (TASK-008); verify with the owner's account before LIVE (WB-9). |
 
 ## 7. How this maps to the three environments
 
@@ -152,6 +153,7 @@ With Webull support or the owner's account (Phase 6, after approval to open the 
 | WB-6 | Market data terms for personal automated use; price of advanced subscriptions. |
 | WB-7 | Behaviour of protective orders during API or system outages; phone/app cancellation procedure; support hours in JST. |
 | WB-8 | Tokutei account with or without withholding — what the API needs (`account_tax_type`). |
+| WB-9 | Meaning of `cash_balance` and `buying_power` for unsettled sale proceeds in a cash account, and whether position `cost_price` is per share (U16). |
 
 ## 9. Sources (accessed 2026-10-23)
 
