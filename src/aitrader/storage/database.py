@@ -109,14 +109,18 @@ class Database:
         self._conn = sqlite3.connect(
             self.path, isolation_level=None, timeout=busy_timeout_ms / 1000
         )
-        self._conn.row_factory = sqlite3.Row
-        self._conn.execute(f"PRAGMA busy_timeout = {int(busy_timeout_ms)}")
-        self._conn.execute("PRAGMA foreign_keys = ON")
-        self._conn.execute("PRAGMA journal_mode = WAL")
-        result = self._conn.execute("PRAGMA integrity_check").fetchone()[0]
-        if result != "ok":  # pragma: no cover - needs a damaged file
-            raise StorageIntegrityError(f"integrity check failed: {result}")
-        self._migrate()
+        try:
+            self._conn.row_factory = sqlite3.Row
+            self._conn.execute(f"PRAGMA busy_timeout = {int(busy_timeout_ms)}")
+            self._conn.execute("PRAGMA foreign_keys = ON")
+            self._conn.execute("PRAGMA journal_mode = WAL")
+            result = self._conn.execute("PRAGMA integrity_check").fetchone()[0]
+            if result != "ok":  # pragma: no cover - needs a damaged file
+                raise StorageIntegrityError(f"integrity check failed: {result}")
+            self._migrate()
+        except BaseException:
+            self._conn.close()
+            raise
 
     # ------------------------------------------------------------------ schema
 

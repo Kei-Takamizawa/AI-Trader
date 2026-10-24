@@ -1,17 +1,18 @@
 """Ingestion: CSV store, checks (DQ-2, DQ-3, DQ-5), fetch report and the CLI command."""
 
 import json
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from pydantic import SecretStr
 from typer.testing import CliRunner
 
 from aitrader.cli import main as cli_main
-from aitrader.clock import TradingCalendar
+from aitrader.clock import SimClock, TradingCalendar
 from aitrader.data import (
     AlpacaDataClient,
     DailyBarRow,
@@ -90,7 +91,13 @@ def responses() -> list[Any]:
 def test_fetch_universe_writes_both_series_and_a_report(tmp_path: Path) -> None:
     client = AlpacaDataClient(SecretStr("k"), SecretStr("s"), transport=FakeTransport(responses()))
     report = fetch_universe(
-        client, ["SPY", "XLC"], date(2024, 7, 1), date(2024, 7, 2), tmp_path, CAL
+        client,
+        ["SPY", "XLC"],
+        date(2024, 7, 1),
+        date(2024, 7, 2),
+        tmp_path,
+        CAL,
+        datetime(2024, 7, 3, tzinfo=UTC),
     )
     assert (tmp_path / "raw" / "SPY.csv").exists()
     assert (tmp_path / "adjusted" / "SPY.csv").exists()
@@ -183,3 +190,71 @@ def test_cli_fetch_reports_data_source_errors(
     )
     assert result.exit_code == 4
     assert "DATA-3" in result.output
+
+
+@pytest.fixture(autouse=True)
+def fixed_cli_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        cli_main, "WallClock", lambda: SimClock(datetime(2024, 7, 5, 22, tzinfo=UTC))
+    )
+
+
+@pytest.mark.parametrize(
+    ("end", "now", "accepted", "last_closed"),
+    [
+        ("2024-07-02", "2024-07-02T20:15:59.999999Z", False, "2024-07-01"),
+        ("2024-07-02", "2024-07-02T20:16:00Z", True, "2024-07-02"),
+        ("2024-07-02", "2024-07-02T20:16:00.000001Z", True, "2024-07-02"),
+        ("2024-07-03", "2024-07-03T17:15:59.999999Z", False, "2024-07-02"),
+        ("2024-07-03", "2024-07-03T17:16:00Z", True, "2024-07-03"),
+        ("2024-07-03", "2024-07-03T17:16:00.000001Z", True, "2024-07-03"),
+        ("2024-07-04", "2024-07-04T22:00:00Z", False, "2024-07-03"),
+        ("2024-07-06", "2024-07-07T22:00:00Z", False, "2024-07-05"),
+        ("2024-07-05", "2024-07-03T22:00:00Z", False, "2024-07-03"),
+        ("invalid", "2024-07-03T22:00:00Z", False, "2024-07-03"),
+        ("2031-01-02", "2024-07-03T22:00:00Z", False, "2024-07-03"),
+    ],
+)
+def test_cli_end_requires_a_closed_session(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    end: str,
+    now: str,
+    accepted: bool,
+    last_closed: str,
+) -> None:
+    timestamp = datetime.fromisoformat(now)
+    monkeypatch.setattr(cli_main, "WallClock", lambda: SimClock(timestamp))
+    transport = FakeTransport(responses())
+    monkeypatch.setattr(
+        cli_main,
+        "AlpacaDataClient",
+        lambda key, secret: AlpacaDataClient(key, secret, transport=transport),
+    )
+    universe = tmp_path / "universe.yaml"
+    universe.write_text("universe: T\nversion: 1\nsymbols: [SPY]\n")
+    result = run(
+        "--end",
+        end,
+        "--start",
+        "2024-07-01",
+        "--universe",
+        str(universe),
+        "--out-dir",
+        str(tmp_path / "bars"),
+        env=KEYS,
+    )
+    if accepted:
+        assert result.exit_code == 0, result.output
+        assert len(transport.requests) == 2
+        for url, _, _ in transport.requests:
+            assert parse_qs(urlsplit(url).query)["end"] == [
+                (timestamp - timedelta(minutes=16))
+                .isoformat(timespec="seconds")
+                .replace("+00:00", "Z")
+            ]
+    else:
+        assert result.exit_code == 2, result.output
+        assert f"last closed session: {last_closed}" in result.output
+        assert not transport.requests
+        assert not (tmp_path / "bars").exists()

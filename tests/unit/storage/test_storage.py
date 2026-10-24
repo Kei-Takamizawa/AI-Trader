@@ -40,6 +40,11 @@ from aitrader.storage import (
 )
 from tests.unit.execution.builders import NOW, SPY, D, decision, harness, intent, quote
 
+pytestmark = [
+    pytest.mark.filterwarnings("error::ResourceWarning"),
+    pytest.mark.filterwarnings("error::pytest.PytestUnraisableExceptionWarning"),
+]
+
 T0 = datetime(2026, 10, 22, 15, 0, tzinfo=UTC)
 
 
@@ -70,11 +75,15 @@ def test_new_database_has_the_current_schema(tmp_path: Path) -> None:
         assert again.schema_version == len(SCHEMA)
 
 
-def test_a_newer_schema_is_refused(tmp_path: Path) -> None:
+def test_a_newer_schema_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     with db_at(tmp_path) as db, db.transaction() as conn:
         conn.execute("UPDATE schema_version SET version = 99")
+    connection = sqlite3.connect(tmp_path / "engine.db", isolation_level=None)
+    monkeypatch.setattr("aitrader.storage.database.sqlite3.connect", lambda *a, **kw: connection)
     with pytest.raises(StorageError, match="newer than this program"):
         db_at(tmp_path)
+    with pytest.raises(sqlite3.ProgrammingError, match="closed database"):
+        connection.execute("SELECT 1")
 
 
 def _insert_then_fail(db: Database) -> None:

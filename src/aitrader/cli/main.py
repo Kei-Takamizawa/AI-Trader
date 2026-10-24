@@ -1,8 +1,9 @@
 """``aitrader`` command-line interface."""
 
 import os
+import shutil
 import subprocess
-from datetime import date
+from datetime import date, timedelta
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
 from pathlib import Path
@@ -12,7 +13,7 @@ import typer
 
 from aitrader.backtest import build_manifest, metrics_for, run_backtest, write_results
 from aitrader.backtest.walkforward import run_walkforward, write_walkforward
-from aitrader.clock import TradingCalendar
+from aitrader.clock import CalendarError, TradingCalendar, WallClock
 from aitrader.config import (
     ConfigError,
     LiveDisabledError,
@@ -106,7 +107,7 @@ def backtest(
     config_dir: Annotated[Path, typer.Option(help="Configuration directory.")] = Path("config"),
     start: Annotated[str | None, typer.Option(help="First session (YYYY-MM-DD).")] = None,
     end: Annotated[str | None, typer.Option(help="Last session (YYYY-MM-DD).")] = None,
-    git_commit: Annotated[str, typer.Option(help="Commit recorded in the manifest.")] = "unknown",
+    git_commit: Annotated[str | None, typer.Option(help="Commit recorded in the manifest.")] = None,
     variants_tried: Annotated[
         int, typer.Option(help="Strategy variants tried so far (document 12 §2).")
     ] = 1,
@@ -142,7 +143,7 @@ def backtest(
         adjusted=adjusted,
         start=first,
         end=last,
-        git_commit=git_commit,
+        git_commit=_git_commit(git_commit, required=False),
         variants_tried=variants_tried,
     )
     write_results(out_dir, manifest, metrics_for(result, source, settings), result)
@@ -163,13 +164,22 @@ def _bar_sources(
     return source, adjusted
 
 
-def _git_commit() -> str:
+def _git_commit(explicit: str | None = None, *, required: bool = True) -> str:
+    """Prefer operator provenance and resolve Git through the current PATH."""
+    if explicit is not None:
+        return explicit
     try:
-        return subprocess.check_output(
-            ["/usr/bin/git", "rev-parse", "HEAD"], text=True, stderr=subprocess.PIPE
+        executable = shutil.which("git")
+        if executable is None:
+            raise FileNotFoundError("git is not on PATH")
+        # The executable is resolved by PATH as required; arguments are fixed, with no shell.
+        return subprocess.check_output(  # noqa: S603
+            [executable, "rev-parse", "HEAD"], text=True, stderr=subprocess.PIPE
         ).strip()
     except (OSError, subprocess.CalledProcessError) as exc:
-        raise DataError("cannot read the git commit for the walk-forward manifest") from exc
+        if required:
+            raise DataError("cannot read the git commit; --git-commit can be passed") from exc
+        return "unknown"
 
 
 @app.command()
@@ -182,6 +192,7 @@ def walkforward(
     train_months: Annotated[int, typer.Option()] = 36,
     test_months: Annotated[int, typer.Option()] = 6,
     holdout_months: Annotated[int, typer.Option()] = 24,
+    git_commit: Annotated[str | None, typer.Option(help="Commit recorded in the manifest.")] = None,
 ) -> None:
     """Select on training windows and evaluate subsequent tests, leaving hold-out locked."""
     if strategy not in ("S1", "S2"):
@@ -204,7 +215,7 @@ def walkforward(
             train_months=train_months,
             test_months=test_months,
             holdout_months=holdout_months,
-            git_commit=_git_commit(),
+            git_commit=_git_commit(git_commit),
             calendar=calendar,
         )
     except DataError as exc:
@@ -230,6 +241,19 @@ def data_fetch(
     except ConfigError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(EXIT_CONFIG_ERROR) from exc
+    calendar = TradingCalendar()
+    now = WallClock().now()
+    cutoff = now - timedelta(minutes=16)
+    last_closed = now.date()
+    while not calendar.is_session(last_closed) or calendar.session_close(last_closed) > cutoff:
+        last_closed = calendar.previous_session(last_closed)
+    try:
+        last = date.fromisoformat(end)
+        if not calendar.is_session(last) or calendar.session_close(last) > cutoff:
+            raise ValueError("end must be a session closed at least 16 minutes ago")
+    except (ValueError, CalendarError) as exc:
+        typer.echo(f"error: {exc}; last closed session: {last_closed}", err=True)
+        raise typer.Exit(EXIT_CONFIG_ERROR) from exc
     secrets = Secrets()
     if secrets.data_api_key is None or secrets.data_api_secret is None:
         typer.echo(
@@ -238,11 +262,10 @@ def data_fetch(
             err=True,
         )
         raise typer.Exit(EXIT_CONFIG_ERROR)
-    calendar = TradingCalendar()
     try:
         client = AlpacaDataClient(secrets.data_api_key, secrets.data_api_secret)
         report = fetch_universe(
-            client, symbols, date.fromisoformat(start), date.fromisoformat(end), out_dir, calendar
+            client, symbols, date.fromisoformat(start), last, out_dir, calendar, now
         )
     except DataSourceError as exc:
         typer.echo(f"error: {exc}", err=True)
