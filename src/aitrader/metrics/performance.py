@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import ROUND_DOWN, ROUND_HALF_EVEN, Decimal
 from itertools import pairwise
+from statistics import NormalDist
 
 from aitrader.domain import Bar, Currency, Side
 from aitrader.fees import ExecutionAssumptions, FeeSchedule, total_order_fees
@@ -70,12 +71,48 @@ def period_returns(
     return results
 
 
-def sharpe(returns: Sequence[Decimal]) -> Decimal | None:
+def sharpe_per_session(returns: Sequence[Decimal]) -> Decimal | None:
     deviation = stdev(returns)
     average = mean(returns)
     if deviation is None or average is None or deviation == 0:
         return None
-    return average / deviation * Decimal(TRADING_DAYS).sqrt()
+    return average / deviation
+
+
+def sharpe(returns: Sequence[Decimal]) -> Decimal | None:
+    ratio = sharpe_per_session(returns)
+    return ratio * Decimal(TRADING_DAYS).sqrt() if ratio is not None else None
+
+
+def deflated_sharpe(
+    returns: Sequence[Decimal], training_sharpes: Sequence[Decimal], trials: int
+) -> Decimal | None:
+    """Bailey and Lopez de Prado (2014), using unannualised session returns.
+
+    Skewness and non-excess kurtosis are empirical central moments, standardised
+    by the empirical second moment. Only the Sharpe uses sample standard deviation.
+    """
+    sr = sharpe_per_session(returns)
+    training_sd = stdev(training_sharpes)
+    if trials < 2 or len(returns) < 3 or sr is None or not training_sd:
+        return None
+    average = sum(returns, Decimal(0)) / len(returns)
+    centered = [r - average for r in returns]
+    m2 = sum((r**2 for r in centered), Decimal(0)) / len(returns)
+    g3 = sum((r**3 for r in centered), Decimal(0)) / len(returns) / m2 ** Decimal("1.5")
+    g4 = sum((r**4 for r in centered), Decimal(0)) / len(returns) / m2**2
+    denominator = 1 - g3 * sr + (g4 - 1) / 4 * sr**2
+    if denominator <= 0:
+        return None
+    gamma = Decimal("0.5772156649")
+    n = Decimal(trials)
+    normal = NormalDist()
+    # Normal CDF/quantiles are the sole float boundary; no money or prices enter it.
+    q1 = Decimal(str(normal.inv_cdf(float(1 - 1 / n))))
+    q2 = Decimal(str(normal.inv_cdf(float(1 - 1 / (n * Decimal(1).exp())))))
+    sr0 = training_sd * ((1 - gamma) * q1 + gamma * q2)
+    z = (sr - sr0) * Decimal(len(returns) - 1).sqrt() / denominator.sqrt()
+    return Decimal(str(normal.cdf(float(z))))
 
 
 def sortino(returns: Sequence[Decimal]) -> Decimal | None:
@@ -238,6 +275,7 @@ def summarize(
         "benchmarks": {
             "B0_buy_and_hold": {
                 "symbol": benchmark_symbol,
+                "sharpe_rf0": fmt(sharpe(daily_returns(start_equity, benchmark)), 4),
                 "total_pct": fmt((benchmark[-1].equity_usd / start_equity - 1) * HUNDRED, 4)
                 if benchmark
                 else None,

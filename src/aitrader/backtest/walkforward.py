@@ -15,9 +15,19 @@ from aitrader.backtest.engine import BacktestResult, run_backtest
 from aitrader.backtest.manifest import BENCHMARK, build_manifest, metrics_for
 from aitrader.clock import TradingCalendar
 from aitrader.config import Settings
+from aitrader.config.hard_caps import HARD_CAPS
 from aitrader.data import CorporateActionKind, DailyBarSource, DataError, PointInTimeBars
+from aitrader.domain import Mode
 from aitrader.fees import WEBULL_JP, ExecutionAssumptions
-from aitrader.metrics import EquityPoint, buy_and_hold, summarize
+from aitrader.metrics import (
+    EquityPoint,
+    buy_and_hold,
+    daily_returns,
+    deflated_sharpe,
+    fmt,
+    sharpe_per_session,
+    summarize,
+)
 from aitrader.portfolio import Ledger
 from aitrader.strategy import (
     MomentumParams,
@@ -30,12 +40,41 @@ from aitrader.strategy import (
 S1_GRID = ((3, 0), (3, 5), (2, 0), (2, 5))
 
 
-def variants(strategy_id: str) -> tuple[Strategy, ...]:
+def variants(strategy_id: str, cash_proxy: str | None = None) -> tuple[Strategy, ...]:
+    if cash_proxy is not None and strategy_id != "S1":
+        raise ValueError("cash_proxy is only supported for S1")
     if strategy_id == "S1":
-        return tuple(MomentumStrategy(MomentumParams(top_n=n, skip=k)) for n, k in S1_GRID)
+        return tuple(
+            MomentumStrategy(MomentumParams(top_n=n, skip=k, cash_proxy=cash_proxy))
+            for n, k in S1_GRID
+        )
     if strategy_id == "S2":
         return (PullbackStrategy(),)
     raise DataError(f"unknown walk-forward strategy {strategy_id!r}")
+
+
+def validate_research_options(
+    settings: Settings,
+    strategy_id: str,
+    risk_per_trade_pct: Decimal | None,
+    cash_proxy: str | None,
+    prior_variants: int,
+) -> None:
+    """Validate before model_copy, which deliberately does not run model validators."""
+    if prior_variants < 0:
+        raise ValueError("prior_variants must be nonnegative")
+    if cash_proxy is not None and strategy_id != "S1":
+        raise ValueError("cash_proxy is only supported for S1")
+    if risk_per_trade_pct is not None:
+        if settings.mode is not Mode.BACKTEST:
+            raise ValueError("risk_per_trade_pct override requires BACKTEST mode")
+        if not risk_per_trade_pct.is_finite() or not (
+            0 < risk_per_trade_pct <= HARD_CAPS["risk_per_trade_pct"]
+        ):
+            raise ValueError(
+                "risk_per_trade_pct must be finite and 0 < value <= "
+                f"{HARD_CAPS['risk_per_trade_pct']}"
+            )
 
 
 def add_months(day: date, months: int) -> date:
@@ -127,7 +166,17 @@ def run_walkforward(
     holdout_months: int = 24,
     git_commit: str = "unknown",
     calendar: TradingCalendar | None = None,
+    risk_per_trade_pct: Decimal | None = None,
+    cash_proxy: str | None = None,
+    prior_variants: int = 0,
 ) -> tuple[dict[str, object], dict[str, object]]:
+    validate_research_options(settings, strategy_id, risk_per_trade_pct, cash_proxy, prior_variants)
+    if risk_per_trade_pct is not None:
+        settings = settings.model_copy(
+            update={
+                "risk": settings.risk.model_copy(update={"risk_per_trade_pct": risk_per_trade_pct})
+            }
+        )
     calendar = calendar or TradingCalendar()
     if holdout_months < 1:
         raise DataError("holdout_months must be positive")
@@ -138,7 +187,9 @@ def run_walkforward(
     holdout_start = calendar.next_session(add_months(data_end, -holdout_months))
     first = start if calendar.is_session(start) else calendar.next_session(start)
     folds = make_folds(first, holdout_start, train_months, test_months)
-    grid = variants(strategy_id)
+    grid = variants(strategy_id) if cash_proxy is None else variants(strategy_id, cash_proxy)
+    training_sharpes: list[Decimal] = []
+    fold_summary: list[dict[str, object]] = []
     pit = PointInTimeBars(source, adjusted)
     reports: list[dict[str, object]] = []
     tests = []
@@ -155,13 +206,28 @@ def run_walkforward(
                 point_in_time=pit,
             )
 
-        training = [
-            metrics_for(run(v, fold.start, fold.test_start), source, settings) for v in grid
-        ]
+        training = []
+        for variant in grid:
+            trained = run(variant, fold.start, fold.test_start)
+            score = sharpe_per_session(daily_returns(trained.start_equity_usd, trained.points))
+            if score is not None:
+                training_sharpes.append(score)
+            training.append(metrics_for(trained, source, settings))
         selected = choose(training)
         result = run(grid[selected], fold.test_start, fold.end)
         tests.append(result)
         test_metrics = metrics_for(result, source, settings)
+        fold_summary.append(
+            {
+                "test": fold.periods()["test"],
+                "total_pct": section(test_metrics, "returns")["total_pct"],
+                "profit_factor": section(test_metrics, "trades")["profit_factor"],
+                "exposure_pct": section(test_metrics, "activity")["exposure_pct"],
+                "selected_grid_point": {
+                    key: grid[selected].params().get(key) for key in ("top_n", "skip")
+                },
+            }
+        )
         reports.append(
             {
                 **fold.periods(),
@@ -174,7 +240,9 @@ def run_walkforward(
                     for v, m in zip(grid, training, strict=True)
                 ],
                 "selected_variant": params_hash(grid[selected]),
-                "test_metrics": {k: test_metrics[k] for k in ("returns", "risk", "trades")},
+                "test_metrics": {
+                    k: test_metrics[k] for k in ("returns", "risk", "trades", "activity")
+                },
             }
         )
     bt = settings.require_backtest()
@@ -204,6 +272,11 @@ def run_walkforward(
         benchmark_symbol=BENCHMARK,
         benchmark=benchmark,
     )
+    returns = daily_returns(bt.initial_capital_usd, points)
+    section(combined, "risk")["sharpe_per_session"] = fmt(sharpe_per_session(returns), 4)
+    section(combined, "risk")["deflated_sharpe"] = fmt(
+        deflated_sharpe(returns, training_sharpes, prior_variants + len(grid)), 4
+    )
     manifest = build_manifest(
         settings=settings,
         strategy=grid[0],
@@ -219,6 +292,12 @@ def run_walkforward(
         {
             "grid": [{"params_hash": params_hash(v), "params": dict(v.params())} for v in grid],
             "variants_tried": len(grid),
+            "variants_tried_total": prior_variants + len(grid),
+            "risk_override": (
+                {"risk_per_trade_pct": str(risk_per_trade_pct)}
+                if risk_per_trade_pct is not None
+                else None
+            ),
             "train_months": train_months,
             "test_months": test_months,
             "holdout_months": holdout_months,
@@ -229,6 +308,7 @@ def run_walkforward(
     )
     return manifest, {
         "folds": reports,
+        "fold_summary": fold_summary,
         "combined": {k: combined[k] for k in ("returns", "risk", "benchmarks")},
         "equity": [
             {"session": p.session.isoformat(), "equity_usd": str(p.equity_usd)} for p in points

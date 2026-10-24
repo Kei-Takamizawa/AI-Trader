@@ -104,7 +104,7 @@ def test_all_fields_affect_hash() -> None:
     assert MomentumStrategy().version == "1.0.0"
     for f in fields(p):
         value = getattr(p, f.name)
-        changed: Any = () if isinstance(value, tuple) else value + 1
+        changed: Any = "SHY" if value is None else (() if isinstance(value, tuple) else value + 1)
         assert params_hash(MomentumStrategy(replace(p, **{f.name: changed}))) != params_hash(
             MomentumStrategy(p)
         )
@@ -114,3 +114,72 @@ def test_held_symbol_outside_universe_exits_as_ineligible() -> None:
     intents = MomentumStrategy(P).evaluate(ctx({}, ("GLD",)))
     assert len(intents) == 1
     assert intents[0].reason == "no longer eligible: outside strategy universe"
+
+
+@pytest.mark.parametrize("qualifying", [0, 1, 3])
+def test_cash_proxy_empty_slots_and_exit(qualifying: int) -> None:
+    from aitrader.domain import Side
+
+    p = replace(P, symbols=("SPY", "QQQ", "IWM", "SHY"), cash_proxy="SHY")
+    prices = {s: ["100", "101", "103"] for s in p.symbols[:qualifying]}
+    prices["SHY"] = ["103", "102", "100"]  # negative momentum/below trend still eligible
+    c = ctx(prices, ("SHY",) if qualifying == 3 else ())
+    c = c.model_copy(update={"session": c.history["SHY"][-1].ts.date()})
+    intents = MomentumStrategy(p).evaluate(c)
+    proxy = next(i for i in intents if i.symbol == "SHY")
+    if qualifying == 3:
+        assert proxy.side is Side.SELL
+    else:
+        assert proxy.target_notional is not None
+        assert proxy.target_notional.amount == (
+            c.equity_usd * p.target_weight * (3 - qualifying)
+        ).quantize(D("0.01"))
+        assert proxy.stop_price == D("92.50")
+
+
+def test_cash_proxy_excluded_from_ranking_and_equivalents() -> None:
+    p = replace(P, symbols=("SPY", "SHY"), equivalents=(("SPY", "SHY"),), cash_proxy="SHY", top_n=1)
+    c = ctx({"SPY": ["100", "101", "103"], "SHY": ["100", "110", "130"]}, ("SHY",))
+    intents = MomentumStrategy(p).evaluate(c)
+    assert [(i.symbol, i.side.value) for i in intents] == [("SHY", "SELL"), ("SPY", "BUY")]
+
+
+@pytest.mark.parametrize("prices", [{}, {"SHY": ["100"]}, {"SHY": ["100", "101", "103"]}])
+def test_cash_proxy_missing_or_stale_bars_stays_cash(
+    prices: dict[str, list[str]], caplog: pytest.LogCaptureFixture
+) -> None:
+    import logging
+
+    with caplog.at_level(logging.INFO):
+        assert MomentumStrategy(replace(P, cash_proxy="SHY")).evaluate(ctx(prices)) == []
+    assert "no bars on the session; stay in cash" in caplog.text
+
+
+def test_cash_proxy_atr_history_held_and_stop() -> None:
+    c = ctx({"SHY": ["100"]})
+    c = c.model_copy(update={"session": c.history["SHY"][-1].ts.date()})
+    assert MomentumStrategy(replace(P, cash_proxy="SHY")).evaluate(c) == []
+    c = ctx({"SHY": ["103", "102", "100"]}, ("SHY",))
+    c = c.model_copy(update={"session": c.history["SHY"][-1].ts.date()})
+    assert MomentumStrategy(replace(P, cash_proxy="SHY")).evaluate(c) == []
+    assert (
+        MomentumStrategy(replace(P, cash_proxy="SHY", atr_stop_multiple=D(100))).evaluate(
+            c.model_copy(update={"holdings": {}})
+        )
+        == []
+    )
+
+
+def test_inactive_cash_proxy_preserves_legacy_identity_and_intents() -> None:
+    import hashlib
+    import json
+    from dataclasses import asdict
+
+    legacy = {k: str(v) for k, v in asdict(P).items() if k != "cash_proxy"}
+    expected_hash = hashlib.sha256(
+        json.dumps(legacy, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    assert params_hash(MomentumStrategy(P)) == expected_hash
+    assert MomentumStrategy(P).evaluate(ctx({"SPY": ["100", "101", "103"]})) == MomentumStrategy(
+        replace(P, cash_proxy=None)
+    ).evaluate(ctx({"SPY": ["100", "101", "103"]}))

@@ -4,6 +4,7 @@ import os
 import shutil
 import subprocess
 from datetime import date, timedelta
+from decimal import Decimal, InvalidOperation
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
 from pathlib import Path
@@ -12,7 +13,11 @@ from typing import Annotated
 import typer
 
 from aitrader.backtest import build_manifest, metrics_for, run_backtest, write_results
-from aitrader.backtest.walkforward import run_walkforward, write_walkforward
+from aitrader.backtest.walkforward import (
+    run_walkforward,
+    validate_research_options,
+    write_walkforward,
+)
 from aitrader.broker.webull import SandboxCredentials, WebullBroker
 from aitrader.broker.webull.check import SandboxCheck, write_auth_failure
 from aitrader.broker.webull.sdk import TokenInitializationError
@@ -199,6 +204,11 @@ def walkforward(
     test_months: Annotated[int, typer.Option()] = 6,
     holdout_months: Annotated[int, typer.Option()] = 24,
     git_commit: Annotated[str | None, typer.Option(help="Commit recorded in the manifest.")] = None,
+    risk_per_trade_pct: Annotated[
+        str | None, typer.Option(help="Research risk percent (BACKTEST only). ")
+    ] = None,
+    cash_proxy: Annotated[str | None, typer.Option(help="S1 empty-slot cash proxy symbol.")] = None,
+    prior_variants: Annotated[int, typer.Option(help="Variants tried before this grid.")] = 0,
 ) -> None:
     """Select on training windows and evaluate subsequent tests, leaving hold-out locked."""
     if strategy not in ("S1", "S2"):
@@ -209,6 +219,12 @@ def walkforward(
     except ConfigError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(EXIT_CONFIG_ERROR) from exc
+    try:
+        risk_override = Decimal(risk_per_trade_pct) if risk_per_trade_pct is not None else None
+        validate_research_options(settings, strategy, risk_override, cash_proxy, prior_variants)
+    except (InvalidOperation, ValueError) as exc:
+        typer.echo(f"error: invalid research options: {exc}", err=True)
+        raise typer.Exit(EXIT_USAGE_ERROR) from exc
     try:
         calendar = TradingCalendar()
         source, adjusted = _bar_sources(data_dir, calendar)
@@ -223,6 +239,9 @@ def walkforward(
             holdout_months=holdout_months,
             git_commit=_git_commit(git_commit),
             calendar=calendar,
+            risk_per_trade_pct=risk_override,
+            cash_proxy=cash_proxy,
+            prior_variants=prior_variants,
         )
     except DataError as exc:
         typer.echo(f"error: {exc}", err=True)

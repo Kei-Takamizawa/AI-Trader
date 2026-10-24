@@ -81,6 +81,9 @@ Window lengths are [A] and can be adjusted in research, but must be declared bef
 | Operating costs | AI, server and data costs per month, shown next to trading P&L; net result |
 | Robustness | Deflated Sharpe ratio; results under each broker cost profile; results with doubled slippage |
 
+Deflated Sharpe is implemented in TASK-012, using Bailey and López de Prado (2014),
+“The Deflated Sharpe Ratio: Correcting for Selection Bias, Backtest Overfitting, and Non-Normality.”
+
 ## 7. Run manifest (reproducibility)
 
 Every backtest writes a manifest next to its results:
