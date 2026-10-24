@@ -1,0 +1,63 @@
+ai_replay_store_hash: null
+config_hash: c8059f8f9c3fb693198cf6bbdaa97617e8d4eda91454b8271f066fd054ef9f95
+corporate_actions:
+  distribution: 830
+  split: 2
+  unexplained: 11
+  unexplained_minor: 11
+cost_profile: webull_jp
+data_end: '2026-10-23'
+data_snapshot_hash: 6f0b27805980e9e013fdd3ff57f85ce8a52719f341cdf2a799348ae451cd8eac
+git_commit: 2d5d385452fd9aba97c10a22139924920b098bc9
+grid:
+- params:
+    atr_period: '20'
+    atr_stop_multiple: '3'
+    core: ('SPY', 'QQQ', 'IWM', 'GLD')
+    defensive: SHY
+    target_weight: '0.25'
+    trend_period: '200'
+  params_hash: d9cb4db30b4572a5272f88a961c4f81cbc26752e3dc0735047667baa54a64eb0
+- params:
+    atr_period: '20'
+    atr_stop_multiple: '2'
+    core: ('SPY', 'QQQ', 'IWM', 'GLD')
+    defensive: SHY
+    target_weight: '0.25'
+    trend_period: '200'
+  params_hash: 011915eda29d4f44fbbf61e1842786989d85c236657814314d960a877650299e
+- params:
+    atr_period: '20'
+    atr_stop_multiple: '3'
+    core: ('SPY', 'QQQ', 'IWM', 'GLD')
+    defensive: SHY
+    target_weight: '0.25'
+    trend_period: '150'
+  params_hash: 034464facb2d275f91772b6c6a1e97b3d95dbe3a4a13fa4c7fdfb59f66e00d67
+- params:
+    atr_period: '20'
+    atr_stop_multiple: '2'
+    core: ('SPY', 'QQQ', 'IWM', 'GLD')
+    defensive: SHY
+    target_weight: '0.25'
+    trend_period: '150'
+  params_hash: 2ea3d50fa00af7987dc2dc8d53b89b105188a3ea8938f6a7ef0cf397dd6aef09
+holdout_months: 24
+holdout_start: '2024-10-24'
+holdout_used: false
+period:
+  end: '2024-07-02'
+  holdout_used: false
+  start: '2017-01-03'
+random_seed: 0
+risk_override: null
+signal_data_snapshot_hash: 965e8cfa2b5c8158b64c65cd5e86a2d506dea3d780061c4d80c91f17067a0682
+strategy:
+  id: S3
+  params_hash: d9cb4db30b4572a5272f88a961c4f81cbc26752e3dc0735047667baa54a64eb0
+  version: 1.0.0
+test_months: 6
+train_months: 36
+variants_tried: 4
+variants_tried_so_far: 4
+variants_tried_total: 25

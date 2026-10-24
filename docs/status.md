@@ -27,7 +27,8 @@ in this build.
 | TASK-012 | S1 v1.1 research support: cash proxy, research-only risk override, deflated Sharpe | done (Codex cycle 5, PR #7) |
 | S1 v1.1 research | Four declared families on real data | done: `docs/research/2026-10-24-s1-v1.1-results.md`; no family passes, S1 stays at 1.0.0 |
 | TASK-013 | PAPER stage 1: local daily runner verified by replay (document 04 §11) | done (Codex cycle 6, PR #9) |
-| TASK-014 | Strategy S3 (plan `docs/research/2026-10-24-s3-plan.md`), neighbour stability, cost share, faster backtests | **in progress** (Codex cycle 7) |
+| TASK-014 | Strategy S3 (plan `docs/research/2026-10-24-s3-plan.md`), neighbour stability, cost share, faster backtests | done (Codex cycle 7, PR #10) |
+| S3 research | S3 and S3-R1 on real data (N = 25) | done: `docs/research/2026-10-24-s3-results.md`; neither passes (S3 fails only the deflated Sharpe, 0.58 < 0.80) |
 
 All of the above up to TASK-010 is on `main`: pull request
 [Kei-Takamizawa/AI-Trader#1](https://github.com/Kei-Takamizawa/AI-Trader/pull/1) was merged on
