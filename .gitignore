@@ -37,3 +37,6 @@ conf/
 # Backtest output
 /results/
 /bt-*/
+
+# macOS Finder metadata
+.DS_Store
