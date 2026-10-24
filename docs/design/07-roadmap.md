@@ -46,5 +46,7 @@ Earliest realistic LIVE_MICRO start: roughly 5–8 months after P1 starts [A], b
 | TASK-006 | Market data ingestion (Alpaca, read-only, decision Q2), quality gate, Parquet store | 005, owner sign-up |
 | TASK-007 | Baseline strategy S1 + walk-forward runner + research report (S2 was implemented in TASK-005) | 006 |
 | TASK-008 | Webull adapter on the official SDK + broker contract tests (sandbox runs allowed once the design is approved, decision Q10) | 004 |
+| TASK-009 | SQLite storage: order store, durable journal and halt state, decision log, runs, single-instance lock and lease | 004 |
+| TASK-010 | Reconciliation of the engine's books against the broker (positions, cash, open orders); mismatch → HALTED | 009 |
 
 TASK-001 is specified in detail in document 10. Later tasks are specified one at a time after the previous one is merged.

@@ -22,6 +22,7 @@ htmlcov/
 *.db
 *.db-wal
 *.db-shm
+*.db.lock
 
 # Secrets and LIVE configuration (never committed)
 .env

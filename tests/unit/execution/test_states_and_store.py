@@ -1,7 +1,9 @@
 """Order state machine and order store."""
 
+from collections.abc import Iterator
 from datetime import timedelta
 from itertools import pairwise, product
+from pathlib import Path
 
 import pytest
 
@@ -12,8 +14,10 @@ from aitrader.execution import (
     IllegalOrderTransitionError,
     InMemoryOrderStore,
     OrderRecord,
+    OrderStore,
     check_transition,
 )
+from aitrader.storage import Database, SqliteOrderStore
 from tests.unit.execution.builders import NOW, D
 
 ALL = list(OrderStatus)
@@ -87,8 +91,18 @@ def record(cid: str = "AAA-1", intent_id: str = "intent-1", attempt: int = 1) ->
     )
 
 
-def test_store_keeps_records_and_an_event_log() -> None:
-    store = InMemoryOrderStore()
+@pytest.fixture(params=["memory", "sqlite"])
+def store(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[OrderStore]:
+    """Every order-store test runs against both implementations."""
+    if request.param == "memory":
+        yield InMemoryOrderStore()
+        return
+    db = Database(tmp_path / "orders.db")
+    yield SqliteOrderStore(db)
+    db.close()
+
+
+def test_store_keeps_records_and_an_event_log(store: OrderStore) -> None:
     first = record()
     store.insert(first, "WRITE_AHEAD")
     submitted = first.moved_to(
@@ -105,8 +119,7 @@ def test_store_keeps_records_and_an_event_log() -> None:
     assert submitted.remaining == D("0.3")
 
 
-def test_one_active_order_per_intent() -> None:
-    store = InMemoryOrderStore()
+def test_one_active_order_per_intent(store: OrderStore) -> None:
     store.insert(record(), "WRITE_AHEAD")
     with pytest.raises(DuplicateOrderError, match="active order"):
         store.insert(record("AAA-2", attempt=2), "WRITE_AHEAD")
@@ -114,18 +127,18 @@ def test_one_active_order_per_intent() -> None:
         store.insert(record(), "WRITE_AHEAD")
 
 
-def test_a_new_attempt_is_possible_once_the_first_is_closed() -> None:
-    store = InMemoryOrderStore()
+def test_a_new_attempt_is_possible_once_the_first_is_closed(store: OrderStore) -> None:
     first = record()
     store.insert(first, "WRITE_AHEAD")
     store.update(first.moved_to(OrderStatus.UNKNOWN, NOW), "TIMEOUT")
-    store.update(store.get("AAA-1").moved_to(OrderStatus.NOT_FOUND, NOW), "NOT_FOUND")  # type: ignore[union-attr]
+    unknown = store.get("AAA-1")
+    assert unknown is not None
+    store.update(unknown.moved_to(OrderStatus.NOT_FOUND, NOW), "NOT_FOUND")
     store.insert(record("AAA-2", attempt=2), "WRITE_AHEAD")
     assert [r.attempt for r in store.for_intent("intent-1")] == [1, 2]
 
 
-def test_store_refuses_illegal_updates() -> None:
-    store = InMemoryOrderStore()
+def test_store_refuses_illegal_updates(store: OrderStore) -> None:
     first = record()
     store.insert(first, "WRITE_AHEAD")
     illegal = first.model_copy(update={"status": OrderStatus.FILLED})
