@@ -24,10 +24,13 @@ in this build.
 | TASK-007c | Research report on real data (operator runs it) | after 007b and the real download |
 | TASK-008 | Webull adapter on the official SDK, contract tests, sandbox runs | later (phase P3b) |
 
-All of the above up to TASK-010 is on branch `claude/adoring-tesla-0pdgtk`, pull request
-[Kei-Takamizawa/AI-Trader#1](https://github.com/Kei-Takamizawa/AI-Trader/pull/1). CI is green;
-the PR touches protected paths (`src/aitrader/risk/`, `src/aitrader/execution/gate.py`), so it
-needs the owner's approval in the PR before it can be merged.
+All of the above up to TASK-010 is on `main`: pull request
+[Kei-Takamizawa/AI-Trader#1](https://github.com/Kei-Takamizawa/AI-Trader/pull/1) was merged on
+2026-10-24 after the owner approved it, including its protected paths (approval recorded in the PR).
+
+The operator PC is the owner's Mac (repository in `~/Documents/AI-Trader`; uv 0.12.1 and
+codex-cli 0.164.0 installed, Codex signed in, the flags in `CLAUDE.md` present). The first
+`uv sync` and the checks there are still pending.
 
 ## Roles (since 2026-10-24)
 
@@ -38,32 +41,28 @@ tests. Claude implemented TASK-002 to TASK-006, TASK-009 and TASK-010 itself bef
 
 ## What the owner needs to do
 
-1. **Approve PR #1** with a comment in the PR (protected paths). The designer then merges it, so
-   that cycle branches start from `main`.
-2. **Alpaca data key, on the operator PC only:** create an API key for the Alpaca **paper**
+1. **Alpaca data key, on the operator PC only:** create an API key for the Alpaca **paper**
    account and set it as the user environment variables `AITRADER_DATA_API_KEY` and
    `AITRADER_DATA_API_SECRET` (for example through the operating system's environment-variable
    settings, so it does not end up in a shell history). Never paste it into a chat, a file, the
    repository, a cloud environment or a Codex or Claude configuration.
-3. **Universe U0:** look at `config/universe.yaml` (23 ETFs) before the first research run;
+2. **Universe U0:** look at `config/universe.yaml` (23 ETFs) before the first research run;
    document 12 requires the universe to be fixed before any backtest on real data.
 
 ## Next steps
 
-1. PR #1 merged (owner approval, then the designer merges).
-2. **Operator, one-time setup on the PC:** clone the repository; install `uv` and the Codex CLI
-   from their official sources; `uv sync`; run the checks from `docs/dev/setup.md` and confirm
-   they pass; confirm `codex exec --help` still offers the flags in `CLAUDE.md`.
-3. **Cycle 1 (TASK-007a):** the designer creates the cycle branch from `main` (the spec is already
-   in `.ai/CURRENT_TASK.md`) and gives the operator its name; the operator fetches it, runs Codex
+1. **Operator, finish the one-time setup on the Mac:** `uv sync` and the checks from
+   `docs/dev/setup.md` must pass before the first Codex run.
+2. **Cycle 1 (TASK-007a):** cycle branch `claude/project-thread-whk5dv`, created from `main`
+   (the spec is in `.ai/CURRENT_TASK.md`); the operator fetches it, runs Codex
    with the command in `CLAUDE.md`, checks `.ai/LAST_REPORT.md` and the checks, commits only the
    listed files, pushes and opens a draft PR; the designer reviews and merges under the merge
    rule.
-4. **Real download (TASK-006), any time after step 2 and the key:** the operator runs
+3. **Real download (TASK-006), any time after step 1 and the key:** the operator runs
    `uv run aitrader data fetch --end <last closed session>` and sends the designer a summary of
    `data/bars/fetch_report.json` (rows, missing sessions, large moves, corporate actions; no data
    is committed). Splits found there decide whether TASK-007a's fail-closed rule is enough.
-5. TASK-007b, then TASK-007c (research report and go/no-go per strategy, phase P2 exit).
+4. TASK-007b, then TASK-007c (research report and go/no-go per strategy, phase P2 exit).
 
 ## Open items
 
