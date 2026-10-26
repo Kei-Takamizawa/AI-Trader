@@ -24,6 +24,28 @@ uv run coverage report --include='src/aitrader/*' --fail-under=90   # coverage g
 
 Fix formatting automatically with `uv run ruff format`.
 
+## Windows operator PC
+
+Install uv with `winget install astral-sh.uv`. The same `uv run` commands above work in
+Windows PowerShell. When the uv cache and repository are on different drives, set
+`$env:UV_LINK_MODE = "copy"` before syncing to avoid cross-drive hard-link warnings.
+
+The operator sets credentials as Windows **user** environment variables through Windows
+Settings (Environment Variables for your account). Never put values in files, commands,
+logs or chat, and never print them. Offline tests need no credentials.
+
+PowerShell does not support `diff -r`. To compare fixture backtests, run:
+
+```powershell
+uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir bt-a --start 2023-01-03 --end 2024-12-31
+uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir bt-b --start 2023-01-03 --end 2024-12-31
+git diff --no-index -- bt-a bt-b
+if ($LASTEXITCODE -ne 0) { throw "Fixture backtests differ or comparison failed" }
+```
+
+Exit code 0 means the files are byte-identical. Remove the two output directories after
+reviewing the comparison.
+
 ## Command-line interface
 
 ```bash

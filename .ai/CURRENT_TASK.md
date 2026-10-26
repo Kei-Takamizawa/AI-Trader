@@ -1,72 +1,120 @@
-# CURRENT_TASK — TASK-015: PAPER observation book for S3
+# CURRENT_TASK — TASK-016: Windows operator PC
 
-Designer: Claude (cloud), 2026-10-24. Implementer and tester: Codex. Read `AGENTS.md` first.
-The previous task's spec is archived in `docs/tasks/TASK-014.md`.
+Designer: Claude, 2026-10-26. Implementer and tester: Codex. Read `AGENTS.md` first.
+The previous task's spec is archived in `docs/tasks/TASK-015.md`.
 
-Owner decision 2026-10-24 (decision card "S3 を観察用に並走"): run S3 1.0.0 in PAPER next to
-S1 1.0.0 as an **observation book**. S3 did not pass its declared rules
-(`docs/research/2026-10-24-s3-results.md`): it is not a candidate and its PAPER results cannot
-promote it to LIVE. Risk per trade stays 0.5% (configuration); no hard cap or risk change.
+Owner decision 2026-10-26: the operator PC moves from the Mac to Windows 11
+(`D:\my-workspace\AI-Trader`, Windows PowerShell 5.1, uv 0.13.5, CPython 3.14.9). PAPER must run
+there from its first session (2026-10-26 close). On Windows today ruff, mypy and lint-imports
+pass, but about 70 tests fail and `aitrader paper run` crashes. The engine is still designed to
+run on Linux later (document 04); this task makes the existing behaviour correct on Windows too,
+without changing any behaviour on Linux or macOS.
 
-Design sources: document 04 §11 (PAPER stage 1), `src/aitrader/app/paper.py`,
-`src/aitrader/app/paper_reports.py`, `src/aitrader/config/settings.py`, `config/paper.yaml`.
-No protected path is touched.
+No protected path is touched. Do not edit `src/aitrader/broker/webull/`, `src/aitrader/risk/`,
+`src/aitrader/execution/` or `config/`.
+
+## Failures seen on Windows (operator run, 2026-10-26)
+
+1. `src/aitrader/storage/instance.py`, `SingleInstanceLock`: `msvcrt.locking` locks and unlocks
+   the byte range starting at the **current file position**. `acquire` writes the PID after
+   locking, so `release` tries to unlock a different range and raises
+   `PermissionError: [Errno 13]`. Every `run_paper` call fails in `__exit__`
+   (`tests/integration/test_paper.py`, almost all tests; `tests/unit/storage/test_storage.py::
+   test_a_second_engine_cannot_take_the_file_lock`).
+2. `src/aitrader/app/paper_reports.py`, `atomic_write`: when `fsync` fails, the temporary file is
+   unlinked while still open; Windows refuses (`WinError 32`), so the original error is masked
+   and the temporary file is left behind (`test_failed_atomic_write_leaves_old_complete_file
+   [flush]`).
+3. `tests/architecture/test_import_contracts.py::test_forbidden_import_breaks_a_contract`: the
+   `lint-imports` subprocess output is decoded with the Windows locale code page (cp932 here),
+   `UnicodeDecodeError` in the reader thread, `result.stdout` is `None`.
+4. `tests/unit/broker/test_webull.py::test_real_sdk_client_override_pin_no_retries_and_cleanup`
+   and `tests/unit/broker/test_webull_tokens.py::test_sdk_token_enabled_normal_or_disabled`
+   assert `st_mode & 0o777 == 0o700` on the token directory. Windows does not implement POSIX
+   mode bits (`os.chmod` only toggles read-only); the directory is under the user's own
+   `%TEMP%`, protected by the profile ACL.
+
+Run the full suite on Windows yourself first; if a failure appears that is not one of these four
+kinds, fix it the same way (smallest change, no behaviour change on POSIX) and list it in the
+report. If a fix would need a protected path, stop with BLOCKED.
 
 ## Scope
 
-### A. Strategy selection in PAPER settings
+### A. Single-instance lock (product code)
 
-- `PaperSettings` gains `strategy: Literal["S1", "S3"] = "S1"` and
-  `purpose: Literal["reference", "observation"] = "reference"`.
-- The runner builds the strategy from `STRATEGIES[strategy]()` with default parameters (S1 1.0.0
-  or S3 1.0.0), instead of always `MomentumStrategy()`. The book identity (`strategy_id`,
-  `strategy_version`, `params_hash`) already prevents mixing strategies in one state directory;
-  keep that and add a test.
-- `config/paper.yaml` states `strategy: S1` and `purpose: reference` explicitly (same book
-  identity as today: S1 default params, same start and simulation values).
-- New `config/paper-s3.yaml`: same as `paper.yaml` except `strategy: S3` and
-  `purpose: observation`, with a comment that S3 did not pass its declared rules and is observed
-  only. Same `start` (2026-10-26) and simulation values. It must load through the existing
-  `aitrader paper run --config config/paper-s3.yaml` path (base.yaml is read alongside it).
+- Lock and unlock the same byte range regardless of the file position: seek to offset 0 before
+  `msvcrt.locking` in both `_lock` and `_unlock` (and restore nothing else). Keep the POSIX
+  `fcntl.flock` path unchanged.
+- Remove the `# pragma: no cover` claim that Windows is only for dev PCs; update the module
+  docstring to say the file lock works on POSIX and Windows. Coverage is measured per platform:
+  keep the Windows branch excluded from coverage on Linux CI the same way it is today (a
+  platform-specific pragma is fine), and make sure it is exercised by the tests on Windows.
+- Tests: acquire, write PID, release, acquire again in the same process; a second process (or a
+  second handle) is refused while held and succeeds after release. Must pass on Windows and Linux.
 
-### B. Status and reports show the book
+### B. Atomic write (product code)
 
-- `status/latest.json` gains `strategy_id`, `strategy_version` and `purpose`.
-- The daily Markdown report's first lines name the strategy and, for `observation`, say:
-  "Observation book: this strategy did not pass its research rules and is not a LIVE candidate."
-- The CLI summary line includes the strategy ID.
+- `atomic_write` closes the temporary file before unlinking it on failure, so the original
+  exception propagates and no temporary file is left, on every platform. Same success behaviour.
+- The existing test covers it; it must pass on Windows.
 
-### C. Docs
+### C. Test portability (tests only)
 
-- `docs/dev/setup.md` PAPER section: the two books and their commands, each with its own state
-  directory:
-  - `uv run aitrader paper run` (S1, `data/paper`);
-  - `uv run aitrader paper run --config config/paper-s3.yaml --state-dir data/paper-s3` (S3).
-  Running S3 against `data/paper` is refused by the book identity check (exit 6); say so.
-- Replace the setup.md sentence "Neither family enables S3 in PAPER" with a pointer to the
-  observation book.
+- Subprocesses in tests that read text output use `encoding="utf-8"` (and set
+  `PYTHONIOENCODING=utf-8` / `PYTHONUTF8=1` in the child env where the child is Python).
+- The two Webull token-directory tests check `0o700` only on POSIX; on Windows they check that
+  the directory exists inside the expected temporary root during the run and is removed after.
+  Do not change the adapter.
+- Any other test that assumes POSIX paths, `/` separators, line endings or file modes gets the
+  smallest portable fix. Never skip a test on Windows unless the behaviour itself is POSIX-only,
+  and then say why in the test and in the report.
+
+### D. CI on Windows
+
+- `.github/workflows/ci.yml`: add a second job `windows` on `windows-latest` with the same uv
+  version and Python, running `uv sync --frozen`, `uv run pytest` and
+  `uv run aitrader live` (expect exit 3, written for PowerShell or `shell: bash`). The coverage
+  gate stays on the Linux job only. Do not change the Linux job.
+
+### E. Docs
+
+- `docs/dev/setup.md`: a short "Windows operator PC" section: uv via `winget install
+  astral-sh.uv`; `UV_LINK_MODE=copy` when the uv cache and the repository are on different
+  drives; credentials as Windows **user** environment variables (no values, no commands that
+  echo values); commands are the same with `uv run`; the fixture backtest comparison uses
+  `Compare-Object`/`fc.exe` or `git diff --no-index` instead of `diff -r` in PowerShell.
 
 ## Tests
 
-1. Default settings and `config/paper.yaml` produce the same S1 book identity as before this
-   task (book row values equal to a pre-task run on the fixtures).
-2. `config/paper-s3.yaml` loads; a fixture run records S3 sessions whose snapshots equal a plain
-   `run_backtest` of S3 over the same period with `capture_sessions=True`.
-3. Running the S3 config against a state directory that holds an S1 book exits 6 and writes
-   nothing; and the reverse.
-4. Status and the daily report show strategy, version and purpose; the observation sentence
-   appears only for `observation`.
-5. An unknown `strategy` or `purpose` value is a configuration error (exit 2).
+1. The full suite passes on Windows (operator PC) and on Linux (CI).
+2. New lock tests as in A.
+3. `atomic_write` failure test passes on Windows (no temporary file left, original error raised).
 
 ## Out of scope
 
-- Running PAPER on real data (the operator starts both books after the first closed session on
-  or after 2026-10-26).
-- Scheduling, notifications, any change to strategies, risk or execution.
+- Running PAPER on real data, scheduling (Task Scheduler), notifications.
+- Any change to strategies, risk, execution, broker adapters or configuration.
 
 ## Acceptance criteria
 
-1. All tests above and every existing test pass; coverage 100% where it is 100% today.
-2. The fixture backtest double run is byte-identical apart from commit-derived fields.
-3. All `AGENTS.md` checks green.
-4. No change to protected paths (`git diff --stat` in LAST_REPORT).
+1. On the Windows operator PC: all `AGENTS.md` checks green; `uv run pytest` 0 failures.
+2. Coverage on Linux CI stays 100% where it is 100% today.
+3. The fixture backtest double run is byte-identical.
+4. `git diff --stat` in LAST_REPORT shows no protected path and no change under
+   `src/aitrader/broker/`, `src/aitrader/risk/`, `src/aitrader/execution/` or `config/`.
+
+## Review round 1 (2026-10-26, Codex GitHub review of 15f17d2)
+
+Finding (valid): in `atomic_write`, when `write`/`flush` fails (for example ENOSPC), the new
+`file.close()` retries the flush and can raise again, so `temporary.unlink()` never runs and a
+temporary file is left (a regression on POSIX).
+
+Required change:
+- Keep close-before-unlink ordering, but make the unlink run even if `close()` raises
+  (`try: file.close() finally: temporary.unlink(missing_ok=True)`, or equivalent). The original
+  exception from write/flush/fsync is the one that propagates; an error from `close()` during
+  cleanup must not replace it (attach it as context at most).
+- Test: simulate a failing `flush` whose subsequent `close` also raises (monkeypatch the file
+  object or `NamedTemporaryFile`), and assert the original error propagates, the target still
+  holds the old content and no temporary file remains. Must pass on Windows and Linux.
+- Coverage stays 100% for `aitrader.app`.

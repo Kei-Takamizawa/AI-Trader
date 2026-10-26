@@ -1,5 +1,6 @@
 """SQLite storage: durability across restarts, rollbacks, locks and crash recovery."""
 
+import os
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -274,12 +275,23 @@ def test_run_log(tmp_path: Path) -> None:
 # ---------------------------------------------------------------- single instance (DUP-5)
 
 
+def test_file_lock_can_be_reacquired_after_writing_pid(tmp_path: Path) -> None:
+    lock = SingleInstanceLock(tmp_path / "engine.db")
+    for _ in range(2):
+        lock.acquire()
+        lock.release()
+        assert lock.path.read_text(encoding="utf-8") == str(os.getpid())
+
+
 def test_a_second_engine_cannot_take_the_file_lock(tmp_path: Path) -> None:
     path = tmp_path / "engine.db"
-    with SingleInstanceLock(path) as first:
-        assert first.path.read_text().strip().isdigit()
-        with pytest.raises(InstanceLockedError, match="held by another process"):
-            SingleInstanceLock(path).acquire()
+    with (
+        SingleInstanceLock(path) as first,
+        pytest.raises(InstanceLockedError, match="held by another process"),
+    ):
+        SingleInstanceLock(path).acquire()
+    # Windows byte-range locks also block reads through another handle while held.
+    assert first.path.read_text(encoding="utf-8") == str(os.getpid())
     second = SingleInstanceLock(path)
     second.acquire()  # free again once the first released it
     second.release()

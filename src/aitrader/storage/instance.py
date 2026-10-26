@@ -1,8 +1,8 @@
 """Single instance per mode and account (document 05, DUP-5): a file lock plus a lease row.
 
-The file lock stops a second process on the same host; the lease row (with an expiry the
-running engine renews) also covers a second host that shares the database through a mounted
-volume, and shows who holds the engine.
+The file lock works on POSIX and Windows and stops a second process on the same host;
+the lease row (with an expiry the running engine renews) also covers a second host that
+shares the database through a mounted volume, and shows who holds the engine.
 """
 
 import os
@@ -56,13 +56,15 @@ class SingleInstanceLock:
         self.release()
 
 
-if sys.platform == "win32":  # pragma: no cover - the engine runs on Linux; this is for dev PCs
+if sys.platform == "win32":  # pragma: no cover - Windows-specific OS locking
     import msvcrt
 
     def _lock(handle: IO[str]) -> None:
+        handle.seek(0)
         msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
 
     def _unlock(handle: IO[str]) -> None:
+        handle.seek(0)
         msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
 
 else:

@@ -66,3 +66,29 @@ jobs:
           done
           diff -r bt-a bt-b
           cat bt-a/manifest.yaml
+
+  windows:
+    name: Windows tests
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.32"
+          python-version: "3.14"
+          enable-cache: true
+
+      - name: Install dependencies (locked)
+        run: uv sync --frozen
+
+      - name: Tests
+        run: uv run pytest
+
+      - name: LIVE remains disabled
+        shell: pwsh
+        run: |
+          uv run aitrader live
+          if ($LASTEXITCODE -ne 3) { throw "Expected LIVE refusal exit code 3" }
+          exit 0
