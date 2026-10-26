@@ -23,6 +23,7 @@
 | 12 | [12-backtest-and-evaluation.md](12-backtest-and-evaluation.md) | Backtest and evaluation method |
 | 13 | [13-operations-and-monitoring.md](13-operations-and-monitoring.md) | Unattended operation, monitoring, Muse interface |
 | 14 | [14-webull-openapi-research.md](14-webull-openapi-research.md) | Webull OpenAPI: supported and unsupported features, data terms, costs, unattended-operation constraints |
+| 15 | [15-cloud-paper-free-tier.md](15-cloud-paper-free-tier.md) | PAPER daily run on Google Cloud at zero cost (approved: Cloud Run job + Cloud Scheduler) |
 
 ## Verification legend
 
@@ -45,7 +46,7 @@
 | D-05 | The risk engine, order gate, execution and broker packages are forbidden from importing the AI package (checked in CI). | "Risk management independent from AI" (requirement section 7). |
 | D-06 | Start with daily-bar, long-only, cash-only, low-frequency ETF strategies. No leverage, no shorting, no options. | Matches the small-capital, low-frequency live plan and keeps costs low. |
 | D-07 | Live broker: **Webull Securities Japan** via the official Python SDK (`webull-openapi-python-sdk`, pinned). moomoo JP and IBSJ remain fallback adapters on paper only. Alpaca is considered only as a read-only market data source for BACKTEST/PAPER. | Owner decision; documents 02 and 14. |
-| D-08 | Google Cloud Compute Engine in `us-east1`, separate projects for PAPER and LIVE, managed by systemd. The home PC is for development and BACKTEST only. | Runs while the owner's machines sleep or lose power; static IP for Webull's IP allow-list; production keys stay away from machines where AI agents work (owner decision Q3). |
+| D-08 | Google Cloud Compute Engine in `us-east1`, separate projects for PAPER and LIVE, managed by systemd. The home PC is for development and BACKTEST only. | Runs while the owner's machines sleep or lose power; static IP for Webull's IP allow-list; production keys stay away from machines where AI agents work (owner decision Q3). Deviation for PAPER stage 1: a Cloud Run job instead of a VM (document 15, approved by the owner 2026-10-26). |
 | D-09 | SQLite (WAL mode) for state, JSON Lines structured logs, Parquet for market data. | Single-node, file-based, easy to back up and to inspect. |
 | D-10 | Economic gate: if small-capital trading cannot pass the cost and risk ratios in document 05, the system stays in PAPER. | Requirement: do not force trades under the ¥100,000 cap. |
 | D-11 | Live capital: start at ¥50,000, hard cap ¥100,000. Sizing uses min(actual equity, approved capital cap), so extra deposits never increase risk. | v0.2 requirement. |

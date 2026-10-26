@@ -1,56 +1,84 @@
-﻿# LAST_REPORT — TASK-016 Review round 1
+﻿# LAST_REPORT — TASK-017 / review round 1
 
 Status: PARTIAL
 
 ## Summary
-Fixed atomic-write failure cleanup so the temporary file is closed before unlinking, unlink still runs if close raises, and the original write/flush/fsync exception propagates. ExitStack removes the automatic context exit on the failure path to prevent a second close from replacing that exception. Added regression coverage for a failing flush with both successful and failing subsequent close. Implementation and focused tests pass on Windows; full-suite verification is incomplete because four CLI tests cannot resolve the Git commit in this environment.
+Published both books' latest status files and newly created daily reports before saving the state archive. A report failure now leaves the previous archive available for replay; daily reports retain create-only uploads and are not rewritten after a retry or archive conflict. Added offline regression tests and updated the operator documentation. Implementation and Windows validation are complete; PARTIAL records that Linux and Windows CI were not run in this network-prohibited session.
 
-Task / cycle: TASK-016 / cycle 9 / Review round 1.
-Execution platform: Windows, PowerShell, existing repository virtual environment, CPython 3.14.9.
-Read-only Git commands could not run: git is absent from PATH; the installed git.exe returned `Access is denied`. Reading repository metadata identified branch `claude/project-thread-whk5dv` and HEAD `b4a65bbb4743c6d48ce7f854b5547e09af0a94dd`; Git worktree cleanliness and diff could not be verified. Only the two implementation/test locations below and this report were edited. CURRENT_TASK.md already contains the full review instructions and was preserved. No Git mutation, network access, dependency installation or protected-path edit was performed.
+Task / cycle: TASK-017 / review round 1 (cycle number not specified).
+Execution platform: Windows, PowerShell, CPython 3.14.9.
+Branch: `claude/project-thread-nnl1b5`.
+HEAD: `581d0aadb36eb6881400e0ef10c60bb0c3514753`.
+CURRENT_TASK.md already contains the full task and review instructions and was preserved.
+The initial sandbox could not execute Git, so the pre-edit working tree was not verified. The first successful Git status, after editing, listed only the three implementation/docs/test files below. No unrelated changes were observed or overwritten.
 
 ## Files changed
-- src/aitrader/app/paper_reports.py
-- tests/integration/test_paper.py
 - .ai/LAST_REPORT.md
+- docs/dev/setup.md
+- src/aitrader/cli/daily.py
+- tests/integration/test_daily.py
+
+No protected path, broker, risk, execution, configuration, design document, dependency or uv.lock was changed. No files were staged, committed or pushed; no branch was changed.
 
 ## Commands run
-The six required commands were each attempted and failed to launch because `uv` is not recognized. Their checks are NOT_RUN via uv; the actual alternative executions below are reported separately.
+All uv commands used process-local `UV_OFFLINE=true`, with no downloads. Existing tools were executed in the approved normal environment after sandbox execution was denied.
 
-- `uv run ruff check`: NOT_RUN (uv unavailable).
-- `uv run ruff format --check`: NOT_RUN (uv unavailable).
-- `uv run mypy`: NOT_RUN (uv unavailable).
-- `uv run lint-imports`: NOT_RUN (uv unavailable).
-- `uv run pytest --cov=aitrader`: NOT_RUN (uv unavailable).
-- `uv run coverage report --include='src/aitrader/*' --fail-under=90`: NOT_RUN (uv unavailable).
-- `.venv/Scripts/python.exe -m ruff check`: PASS, all checks passed after fixes.
-- `.venv/Scripts/python.exe -m ruff format --check`: PASS, 166 files already formatted.
-- `.venv/Scripts/python.exe -m mypy`: PASS, no issues in 165 source files after fixes.
-- `.venv/Scripts/lint-imports.exe`: PASS, 10 contracts kept, 0 broken.
-- `.venv/Scripts/python.exe -m pytest tests/integration/test_paper.py -k 'failed_flush or failed_atomic' -q --basetemp=.tmp/review1-targeted`: PASS, 4 passed.
-- `.venv/Scripts/python.exe -m pytest --cov=aitrader --basetemp=.tmp/review1-full`: FAIL, 4 failed, 1437 passed, 22 skipped in 100.19s. Existing skips were retained; no skips or weakened checks were added.
-- `.venv/Scripts/python.exe -m coverage report --include='src/aitrader/*' --fail-under=90`: PASS, total 99% (5297 statements, 12 missed; 1322 branches, 3 partial).
-- `.venv/Scripts/python.exe -m coverage report --include='src/aitrader/app/*'`: PASS, 100% (207 statements, 38 branches, none missed/partial); paper_reports.py also 100%.
+- `uv run ruff check`: PASS, all checks passed.
+- `uv run ruff format --check`: PASS, 170 files already formatted.
+- `uv run mypy`: PASS, no issues in 169 source files.
+- `uv run lint-imports`: PASS, 11 contracts kept, 0 broken.
+- `uv run pytest --cov=aitrader --cov-report=term:skip-covered --basetemp=results/task017-review-final-full -o cache_dir=results/task017-review-cache`: PASS, 1536 passed in 122.75 seconds; no skipped or expected failures reported. This final run includes every change and added test.
+- `uv run coverage report --include='src/aitrader/*' --fail-under=90 --skip-covered`: PASS, overall 99%; 5569 statements, 5 missed, 1386 branches, 0 partial branches. The five missed statements are the existing non-Windows lock path in storage/instance.py (91%).
+- `uv run coverage report --include='src/aitrader/cloud/*,src/aitrader/cli/*' --fail-under=100`: PASS, 100%; 490 statements, 86 branches, none missed or partial. daily.py: 139 statements / 32 branches; cli/main.py: 226 / 22; cloud: 125 / 32.
+- `uv run pytest tests/integration/test_daily.py --cov=aitrader.cli.daily --basetemp=results/task017-review-final -o cache_dir=results/task017-review-cache`: PASS, 29 passed in 18.53 seconds, daily.py 100% statement/branch coverage.
+- Initial focused run before the final status-conflict case: PASS, 28 passed. An earlier full run also passed; the final full run above is the authoritative result.
+- `uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir bt-a --start 2023-01-03 --end 2024-12-31`: PASS, run_id `bt-4d2902512eb2375b`.
+- Same backtest with `--out-dir bt-b`: PASS, same run_id.
+- PowerShell relative-path and SHA256 comparison: PASS, all 3 output files byte-identical. Removed only bt-a and bt-b after verifying their resolved absolute paths equal the expected repository-local paths.
+- `git diff --check`: PASS, no whitespace errors.
+- `git diff --exit-code -- src/aitrader/broker src/aitrader/risk src/aitrader/execution src/aitrader/config/hard_caps.py config uv.lock`: PASS, exit 0, no differences.
+- Linux CI / Windows CI: NOT_RUN, network prohibited.
+- Container image build / deployment: NOT_RUN, network and cloud provisioning outside this task.
+- GUI verification: NOT_RUN, command-line-only behavior.
 
-Initial focused test setup failed because the default external pytest temporary root denied access (WinError 5). The first repository basetemp attempt lacked its parent directory (WinError 3); creating the repository-local parent resolved setup. Preliminary lint/type findings introduced during editing were fixed and rechecked as above. An early coverage query while pytest was still running returned no data; final coverage figures above come from the completed run.
+Implementation diff stat (`git diff --stat -- docs/dev/setup.md src/aitrader/cli/daily.py tests/integration/test_daily.py`):
+
+```text
+ docs/dev/setup.md               |  6 ++-
+ src/aitrader/cli/daily.py       |  8 +++-
+ tests/integration/test_daily.py | 81 ++++++++++++++++++++++++++++++++++++++++-
+ 3 files changed, 91 insertions(+), 4 deletions(-)
+```
+
+The report itself is the fourth changed file. The stat has no protected path or uv.lock change.
 
 ## Acceptance criteria
-- [x] Close before unlink, including a failing close, while preserving the original exception — `test_failed_flush_cleans_up_even_if_close_fails[True]` asserts exception object identity, old target content, and no temporary file remaining.
-- [x] Failure cleanup also works when close succeeds — the same regression test with `[False]`.
-- [x] Existing fsync and rename failure coverage remains passing — `test_failed_atomic_write_leaves_old_complete_file[flush/rename]`.
-- [x] aitrader.app coverage stays 100% — completed Windows coverage report, including branches.
-- [ ] All AGENTS.md checks green via uv — uv unavailable; alternative full suite has four environment-related failures.
-- [ ] Linux verification — NOT_RUN on this Windows host; CI execution remains required.
-- [ ] Git diff/stat verification — unavailable because git.exe execution was denied. No protected paths were edited by this work.
+- [x] Publish reports before state — test_cloud_init_repeat_and_reports verifies both latest status files are first and the archive is last.
+- [x] Report failure exits 4 and preserves the archive generation — test_report_failure_replays_before_saving_state covers status failure, status precondition failure, and partial daily-report publication failure.
+- [x] The next run publishes the missing report and saves the archive without rewriting published daily reports — the same test restores generation 7, retries, and verifies generation 8 and immutable previously published reports.
+- [x] Archive conflict after report publication exits 5; the next run does not rewrite daily reports — test_archive_conflict_after_reports_retries_without_rewriting checks unchanged archive generation 3, eight published reports, successful retry to generation 4, and one successful write per daily report.
+- [x] Existing regression coverage remains green — final full suite, 1536 passed. The older conflict assertion now checks immutable archive and daily-report objects separately because latest status files are intentionally published before the archive conflict.
+- [x] cloud and CLI remain at 100% statement/branch coverage; overall coverage gate unchanged — final coverage reports above.
+- [x] Fixture backtest double run is byte-identical — matching filenames and SHA256 for all three files.
+- [x] Protected paths, broker/risk/execution/config and dependencies unchanged — exit-0 Git check and implementation stat above.
+- [x] Setup documentation explains reports are published before state is saved and how failure recovers.
+- [x] Windows/Linux command differences recorded below.
+- [ ] Linux and Windows CI green — NOT_RUN; operator must run CI for the committed revision.
+
+## Expected / Actual
+Report upload failure: expected exit 4, daily.upload error log and previous archive unchanged; actual verified for both status and daily-report failures, including status HTTP-412-equivalent errors.
+Retry: expected replay to recreate missing reports, create-only conflict tolerance and archive advance; actual eight daily reports exist after recovery, with previously published bytes/generations unchanged.
+Archive conflict: expected reports may already be published, exit 5 without retry, unchanged archive; actual verified, followed by successful retry with no daily-report rewrite.
+All invocation helper checks require every stdout line to parse as JSON and contain UTC ts, severity, event and exit_code; daily.end matches the process exit code.
+
+## Errors and warnings
+- Sandbox: git and uv were not recognized on PATH. The located Git executable returned `Access is denied`; virtual-environment Python returned `error: uv trampoline failed to spawn Python child process` / `Caused by: permission denied (os error 5)`. Approved normal-environment execution resolved tool access. These were execution-environment failures, not test failures.
+- Git warns that LF will be replaced by CRLF when it next touches daily.py and test_daily.py. Whitespace checks pass.
 
 ## Deviations from the task or the design
-Used installed virtual-environment tools directly instead of uv because uv could not be found. Used repository-local pytest basetemp because the default location was inaccessible. No product/design deviation. Fixture backtest double run NOT_RUN: this review changes only PAPER report failure cleanup, not backtest behavior. GUI verification NOT_RUN: no GUI change. No real-data PAPER run, network access, broker calls, commit or push.
+None from the review instructions. The review explicitly replaces the archive-before-reports sequence in the original task and design document 15 section 4; the design document was left unchanged as required.
+Windows command difference: Bash `diff -r bt-a bt-b && rm -rf bt-a bt-b` was implemented with PowerShell relative-path/SHA256 comparison and Remove-Item after resolved-path boundary checks. The uv checks have no intended Windows/Linux command difference; Linux execution remains NOT_RUN.
 
 ## Open issues and questions
-Four full-suite failures all report `error: cannot read the git commit; --git-commit can be passed`:
-- tests/integration/test_s3_reporting.py::test_s3_cli_and_cash_proxy_refusal
-- tests/integration/test_walkforward.py::test_cli_walkforward[S1]
-- tests/integration/test_walkforward.py::test_cli_walkforward[S2]
-- tests/integration/test_walkforward.py::test_cli_errors
-
-Reproduce with the full pytest command above in this environment. Expected: those CLI tests reach their intended walk-forward assertions. Actual: CLI exits early because Git is unavailable. No unrelated test or CLI behavior was changed to hide this environmental failure. Operator must rerun the required uv checks with Git executable, and obtain Linux CI results. No design decision is required for the implemented cleanup fix.
+Operator action: commit only the four listed files and run Linux/Windows CI. No product design decision is required for this review fix.
+Intentionally not performed: Git staging/commit/push/branch changes, network API calls, real credential or market-data access, cloud resources, image build, deployment, notifications, or new dependencies.
