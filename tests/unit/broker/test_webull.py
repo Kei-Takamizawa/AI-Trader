@@ -2,6 +2,8 @@
 
 import json
 import logging
+import os
+import tempfile
 from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -140,11 +142,17 @@ def test_sdk_resolved_production_host_refused_without_transport(
 
 def test_real_sdk_client_override_pin_no_retries_and_cleanup(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
+    # Keep cwd separate from the temporary root even when TEMP is inside the repository.
+    monkeypatch.chdir(tmp_path)
     transport = sdk.SDKTransport(SandboxCredentials(ENV), SANDBOX_HOST.upper(), SimClock(NOW))
     token_dir = Path(transport._client.get_token_dir())
     assert token_dir.is_dir()
-    assert token_dir.stat().st_mode & 0o777 == 0o700
+    if os.name == "posix":
+        assert token_dir.stat().st_mode & 0o777 == 0o700
+    else:
+        assert token_dir.resolve().is_relative_to(Path(tempfile.gettempdir()).resolve())
     assert not token_dir.is_relative_to(Path.cwd())
     assert transport._client._auto_retry is False
     seen = []

@@ -1,132 +1,85 @@
-# LAST_REPORT — TASK-015
+# LAST_REPORT — TASK-016
 
-Status: DONE
+Status: PARTIAL
 
 ## Summary
+Implemented Windows operator-PC portability without changing the POSIX lock implementation, Linux CI job, broker adapters, risk, execution or configuration. Windows locks now seek to byte zero before locking and unlocking; failed atomic writes close their temporary handle before unlinking. Tests explicitly use UTF-8 for subprocess text and copied source, account for Windows file modes and mandatory byte-range locks, and verify lock reacquisition. Added the Windows CI job and operator setup instructions; all local checks pass, but Linux CI execution remains unverified.
 
-Added S3 1.0.0 as a separate PAPER observation book while retaining the default S1 1.0.0
-reference book and its exact pre-task identity. PAPER selects the configured default strategy,
-shows strategy/version/purpose in status and daily reports, and includes the strategy ID in the
-CLI summary. Cross-strategy book mismatches return exit 6 without replacing existing status,
-sessions or reports, including when local data loading fails. Setup instructions document both
-books and their separate state directories; observation results cannot promote S3 to LIVE.
-
-Task / cycle: TASK-015 / cycle 8. Execution platform: local operator Mac, Python 3.14.7.
-Starting branch: `claude/project-thread-whk5dv`; HEAD:
-`751f10e0f18aada7b3477c63de93708bd0a14954`. The initial working tree was clean.
-The complete `.ai/CURRENT_TASK.md` was already present, read fully and retained unchanged.
-No conflicting task or design requirement was found.
+Task / cycle: TASK-016 / cycle 9. Execution platform: Windows operator PC, PowerShell, CPython 3.14.9, uv 0.13.5.
+Starting branch: `claude/project-thread-whk5dv`.
+Starting HEAD: `187dd3deb44a862cd626a98ef11e06e4cda5df64`.
+Starting tracked worktree: clean; only scratch files created by this run were untracked.
+The existing `.ai/CURRENT_TASK.md` already contained the complete instructions and was preserved.
 
 ## Files changed
-
 - `.ai/LAST_REPORT.md`
-- `config/paper.yaml`
-- `config/paper-s3.yaml` (added)
+- `.github/workflows/ci.yml`
 - `docs/dev/setup.md`
-- `src/aitrader/app/paper.py`
 - `src/aitrader/app/paper_reports.py`
-- `src/aitrader/cli/main.py`
-- `src/aitrader/config/settings.py`
-- `tests/fixtures/paper/README.md` (added)
-- `tests/fixtures/paper/s1-book.json` (added)
+- `src/aitrader/storage/instance.py`
+- `tests/architecture/test_banned_clock_api.py`
+- `tests/architecture/test_import_contracts.py`
 - `tests/integration/test_paper.py`
+- `tests/unit/broker/test_webull.py`
+- `tests/unit/broker/test_webull_tokens.py`
+- `tests/unit/storage/test_storage.py`
 
 ## Commands run
+All final uv commands used the installed environment, with `UV_OFFLINE=1`, `UV_NO_SYNC=1`, and a repository-local cache. TEMP/TMP and the pytest cache were redirected into task-specific repository-local scratch directories. Git was added to the process PATH. No packages were installed or downloaded.
 
-Final uv checks used `UV_CACHE_DIR=.uv-cache UV_OFFLINE=true` so the cache stays inside the
-repository and dependency downloads are disabled. No dependency was added.
-
-| Command | Result |
-| --- | --- |
-| `uv run ruff check` | PASS: All checks passed |
-| `uv run ruff format --check` | PASS: 166 files already formatted |
-| `uv run mypy` | PASS: no issues in 165 source files |
-| `uv run lint-imports` | PASS: 10 contracts kept, 0 broken |
-| `uv run pytest --cov=aitrader` | PASS: 1460 passed in 49.33s |
-| `uv run coverage report --include='src/aitrader/*' --fail-under=90` | PASS: 100% in every source file; 5291 statements, 1322 branches, zero misses/partial branches |
-| `uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir bt-a --start 2023-01-03 --end 2024-12-31` | PASS: run ID `bt-7406778ee29907d6` |
-| `uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir bt-b --start 2023-01-03 --end 2024-12-31` | PASS: same run ID |
-| `diff -r bt-a bt-b && rm -rf bt-a bt-b` | PASS: exit 0, byte-identical including commit-derived fields; temporary outputs removed |
-| `git diff --check` | PASS: no whitespace errors |
-
-Additional verification: before implementation, two fixture PAPER runs (default settings and
-`config/paper.yaml`, start moved to 2023-10-02, through 2023-10-30) both returned exit 0 and
-identical complete book rows. Their captured row is the regression-test fixture listed above;
-temporary databases were removed. The initial focused PAPER test run passed 94 tests; the final
-suite includes two more cases covering data-loading failure during cross-strategy refusal.
-An earlier full run passed 1458 tests at 100% coverage before those two cases were added.
-`uv run ruff format` applied formatting before the final checks.
-
-### Errors and warnings resolved during work
-
-- The first offline uv probe could not access the default external cache (`Operation not
-  permitted`). Subsequent commands used the repository-local cache; no escalation or download.
-- A temporary baseline script initially called nonexistent `Settings.require_paper`; corrected
-  to use the validated `settings.paper` before capturing the baseline. No product change needed.
-- Initial lint/type checks found the new test's parametrize argument style, an implicit module
-  re-export and an optional-settings access. Corrected those tests; final checks above pass.
-- No unresolved errors or warnings in the final checks.
+- `uv run ruff format`: PASS — formatting applied.
+- `uv run ruff check`: PASS — All checks passed, exit 0.
+- `uv run ruff format --check`: PASS — 166 files already formatted, exit 0.
+- `uv run mypy`: PASS — no issues found in 165 source files, exit 0.
+- `uv run lint-imports`: PASS — 10 contracts kept, 0 broken, exit 0.
+- `uv run pytest --cov=aitrader`: PASS — 1461 passed in 115.39 seconds; no failures, skips or warnings, exit 0.
+- `uv run coverage report --include='src/aitrader/*' --fail-under=90`: PASS — displayed total 99%, exit 0; 5292 statements, 5 missed, 1322 branches, 0 partial branches.
+- `uv run coverage report --include='src/aitrader/storage/*' --fail-under=90`: PASS — displayed storage total 98%; instance.py 91%. The only five missing statements are the POSIX-only fcntl implementation, lines 71-77. Every other source file is 100% in this Windows run. The existing Windows-branch coverage exclusion remains for Linux; Windows lock behavior is exercised directly by the lock and PAPER tests.
+- `uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir bt-a --start 2023-01-03 --end 2024-12-31`: PASS — run ID `bt-adf7cbdbb3bd05b3`.
+- `uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir bt-b --start 2023-01-03 --end 2024-12-31`: PASS — same run ID.
+- `git diff --no-index -- bt-a bt-b`: PASS — no differences, exit 0. Independent SHA-256 comparison also matched all three files (equity.csv, manifest.yaml, metrics.json).
+- `uv run aitrader live`: PASS — `LIVE is disabled in this build`, expected and actual exit 3.
+- `git diff --check`: PASS — no whitespace errors.
+- `git diff --numstat -- src/aitrader/broker src/aitrader/risk src/aitrader/execution config`: PASS — empty output.
+- Linux/macOS execution and hosted CI: NOT_RUN — unavailable locally; network and Git publication are prohibited for this implementer.
+- GUI verification: NOT_RUN — this task changes console/file behavior and CI; there is no GUI acceptance flow.
 
 ## Acceptance criteria
+- [x] Windows AGENTS.md checks green and pytest has zero failures — all six prescribed checks passed; full suite: 1461 passed.
+- [ ] Linux CI coverage stays 100% where previously 100% — Linux job and POSIX implementation are unchanged, and the Windows exclusion is retained, but hosted Linux execution must be verified by the operator/reviewer.
+- [x] Fixture backtest double run is byte-identical — git comparison exit 0 and matching SHA-256 for all three outputs.
+- [x] No protected-path or broker/risk/execution/config changes — empty scoped numstat and the implementation diff stat below.
+- [x] Lock acquisition, PID writing, release, reacquisition, held-lock refusal and acquisition after release — `test_file_lock_can_be_reacquired_after_writing_pid` and `test_a_second_engine_cannot_take_the_file_lock` passed on Windows.
+- [x] Atomic-write failure preserves the complete old file, original exception and clean temporary directory — both parametrizations of `test_failed_atomic_write_leaves_old_complete_file` passed.
+- [x] Windows CI job and setup instructions added — workflow diff adds only the windows job, using the Linux job's uv/Python versions; setup documents winget, cross-drive copy mode, user environment variables and PowerShell comparison.
 
-- [x] Default settings and `config/paper.yaml` retain the S1 book identity —
-  `test_s1_book_matches_pre_task_fixture` compares every column with the pre-task captured row.
-- [x] S3 config loads with the same start/simulation/risk as S1; S3 snapshots and hashes match
-  plain `run_backtest(..., capture_sessions=True)` — `test_s3_config_and_fixture_parity`.
-- [x] S3 against S1 state and S1 against S3 state return exit 6 without changing database,
-  status or daily report bytes — `test_cli_refuses_other_strategy_without_writing`, both
-  directions with available and missing data. Lock acquisition retains the existing mechanism.
-- [x] Status and reports show strategy/version/purpose; the exact observation sentence appears
-  only for observation — `test_book_metadata_in_status_and_daily_reports`, all four
-  strategy/purpose combinations. CLI strategy output is checked in the refusal test's first run.
-- [x] Unknown strategy/purpose produce configuration exit 2 before state creation —
-  `test_cli_unknown_paper_setting` (S2, unknown strategy, candidate purpose).
-- [x] All existing and new tests pass; coverage remains 100% — final full suite above.
-- [x] Fixture backtest double run is byte-identical — `diff -r` exit 0.
-- [x] All AGENTS.md checks pass — final command table above.
-- [x] Protected paths unchanged — protected-path `git diff --name-only` returned no output;
-  implementation diff stat below contains no protected path.
-
-### Implementation diff stat
-
-Output of `git diff --stat -- . ':(exclude).ai/LAST_REPORT.md'`:
+Implementation `git diff --stat` snapshot before updating this report:
 
 ```text
- config/paper.yaml                 |   2 +
- docs/dev/setup.md                 |  20 ++++--
- src/aitrader/app/paper.py         |  35 ++++++++--
- src/aitrader/app/paper_reports.py |  38 +++++++++--
- src/aitrader/cli/main.py          |   1 +
- src/aitrader/config/settings.py   |   2 +
- tests/integration/test_paper.py   | 133 ++++++++++++++++++++++++++++++++++++--
- 7 files changed, 209 insertions(+), 22 deletions(-)
+ .github/workflows/ci.yml                    | 26 ++++++++++++++++++++++++++
+ docs/dev/setup.md                           | 22 ++++++++++++++++++++++
+ src/aitrader/app/paper_reports.py           |  1 +
+ src/aitrader/storage/instance.py            | 10 ++++++----
+ tests/architecture/test_banned_clock_api.py |  1 +
+ tests/architecture/test_import_contracts.py | 12 ++++++++++--
+ tests/integration/test_paper.py             |  8 +++++++-
+ tests/unit/broker/test_webull.py            | 10 +++++++++-
+ tests/unit/broker/test_webull_tokens.py     |  7 ++++++-
+ tests/unit/storage/test_storage.py          | 20 ++++++++++++++++----
+ 10 files changed, 104 insertions(+), 13 deletions(-)
 ```
 
-Git diff does not include untracked additions: `config/paper-s3.yaml`,
-`tests/fixtures/paper/README.md`, `tests/fixtures/paper/s1-book.json`. They are included in the
-complete Files changed list, along with this report.
-
-## Expected / Actual and GUI verification
-
-Expected: independent S1 reference and S3 observation books, unchanged simulation/risk values,
-exact fixture replay parity, refusal of mixed books and explicit observation labelling.
-Actual: all verified by the offline tests and commands above.
-GUI: NOT_RUN; this task changes configuration, a CLI runner and generated report files, with
-no application GUI. CLI flows and report contents were verified programmatically.
-
 ## Deviations from the task or the design
+No product/design deviations. Additional test-portability details found during validation:
 
-None. Existing book/session identity checks and immutable report behavior are retained.
-Book identity mismatches return HALTED to the caller without overwriting the other book's
-persisted status; historical session mismatches still publish HALTED as before.
+- The import-contract probe also wrote Python source using the locale encoding; specifying UTF-8 avoids UnicodeEncodeError and malformed probe source.
+- Windows mandatory byte locks refuse reads through a second handle, so PID assertions now run after release; contention and reacquisition assertions remain intact.
+- The SDK temporary-directory test now changes cwd to its own tmp_path, keeping the existing outside-cwd assertion meaningful when TEMP itself is redirected inside the repository.
+- No tests were skipped, disabled or weakened; no import contracts or coverage thresholds changed.
+
+Initial baseline commands used the existing Python environment because uv/Git were initially absent from the sandbox PATH. The first full baseline encountered access-denied errors in the existing system pytest temp root. A repository-local baseline completed with 72 failed tests, including the specified failures and missing-Git provenance failures. Read-only Git commands and final offline uv checks succeeded with the tool's approved elevated execution; no automatic approval rejection occurred. Intermediate validation exposed the UTF-8 source-write and locked-file-read assumptions above; these were fixed before the final clean run. Initial Ruff and pytest-cache access warnings were avoided by moving scratch into ignored directories and using a fresh pytest cache. Final checks have no such warnings.
 
 ## Open issues and questions
+The operator/reviewer must run hosted Linux CI and the newly added Windows CI job before accepting criterion 2. PARTIAL reflects that outstanding external validation; implementation and local Windows validation are complete. No design decision is requested.
 
-None. No decision from Claude is required for this task.
-
-## Intentionally not performed
-
-No real-data PAPER run, data fetch, external API call, scheduling, notification, LIVE enablement,
-risk/strategy/execution change, protected-path edit, Git staging, commit, push or branch change.
-The operator starts the two real-data books after the first closed session on or after
-2026-10-26 and performs all Git work.
+Intentionally not performed: network access, dependency synchronization/downloads, real-data PAPER runs, scheduling, notifications, live broker calls, GUI operations, protected-path changes, design-document changes, staging, commits, pushes, branch changes or merges. Git publication belongs to the operator. Task-generated backtest outputs and raw validation logs are excluded from the deliverable.

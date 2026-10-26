@@ -26,13 +26,19 @@ def _copy_project(tmp_path: Path) -> Path:
 
 
 def _lint_imports(project: Path) -> subprocess.CompletedProcess[str]:
-    env = {**os.environ, "PYTHONPATH": str(project / "src")}
+    env = {
+        **os.environ,
+        "PYTHONPATH": str(project / "src"),
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONUTF8": "1",
+    }
     return subprocess.run(
         [_tool("lint-imports"), "--no-cache"],
         cwd=project,
         env=env,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
     )
 
@@ -65,7 +71,9 @@ def test_unmodified_project_keeps_all_contracts(tmp_path: Path) -> None:
 def test_forbidden_import_breaks_a_contract(tmp_path: Path, module: str, statement: str) -> None:
     project = _copy_project(tmp_path)
     target = project / "src" / "aitrader" / module
-    target.write_text(target.read_text(encoding="utf-8") + f"\n{statement}  # probe\n")
+    target.write_text(
+        target.read_text(encoding="utf-8") + f"\n{statement}  # probe\n", encoding="utf-8"
+    )
     result = _lint_imports(project)
     assert result.returncode != 0
     assert "BROKEN" in result.stdout

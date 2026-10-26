@@ -27,6 +27,7 @@ def _ruff(source: str, filename: str) -> subprocess.CompletedProcess[str]:
         cwd=REPO,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
     )
 

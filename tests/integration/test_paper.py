@@ -1,6 +1,7 @@
 """Offline PAPER replay, persisted evidence, CLI failures and immutable reports."""
 
 import json
+import os
 import shutil
 import sqlite3
 import subprocess
@@ -641,7 +642,12 @@ assert result.exit_code == 0
 assert not any(n.startswith(('aitrader.broker.webull', 'webull')) for n in sys.modules)
 """
     result = subprocess.run(
-        [sys.executable, "-c", code, str(tmp_path)], capture_output=True, text=True, check=False
+        [sys.executable, "-c", code, str(tmp_path)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"},
+        check=False,
     )
     assert result.returncode == 0, result.stderr
 

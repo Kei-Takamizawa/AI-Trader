@@ -48,6 +48,7 @@ def atomic_write(path: Path, content: str) -> None:
             file.flush()
             os.fsync(file.fileno())
         except BaseException:
+            file.close()
             temporary.unlink()
             raise
     try:

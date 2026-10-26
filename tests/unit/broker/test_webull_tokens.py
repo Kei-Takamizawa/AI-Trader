@@ -2,6 +2,8 @@
 
 import json
 import logging
+import os
+import tempfile
 from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -127,7 +129,10 @@ def test_sdk_token_enabled_normal_or_disabled(http: InitializerHTTP, enabled: bo
         "latency_ms": "200" if enabled else "100",
     }
     assert token_dir.exists()
-    assert token_dir.stat().st_mode & 0o777 == 0o700
+    if os.name == "posix":
+        assert token_dir.stat().st_mode & 0o777 == 0o700
+    else:
+        assert token_dir.resolve().is_relative_to(Path(tempfile.gettempdir()).resolve())
     if enabled:
         assert list(token_dir.rglob("*"))
     assert broker.account().cash_usd_settled == 1000
