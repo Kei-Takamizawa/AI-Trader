@@ -153,3 +153,26 @@ New package `aitrader.cloud` (or module, your choice) with:
    `src/aitrader/broker/`, `src/aitrader/risk/`, `src/aitrader/execution/` or `config/`, and no
    change to `uv.lock` dependencies.
 5. LAST_REPORT lists any command whose behaviour differs between Windows and Linux.
+
+## Review round 1 (2026-10-26, Codex GitHub review of e9e1865)
+
+Finding (valid, P2): if the state archive upload succeeds and a later report upload fails, the
+next run restores those reports from the archive, counts them in `before`, and never publishes
+them.
+
+Required change (keep the create-only precondition; do not upload every report on every run,
+because that would grow Class A operations past the free tier within about three months):
+- In cloud mode, publish reports **before** the state archive upload: first each book's
+  `status/latest.json`, then the daily report files created in this run (create-only,
+  `ifGenerationMatch=0`, 412 ignored as today), then the archive with its generation
+  precondition.
+- If any report upload fails (other than 412 on a daily report), do not upload the archive; log
+  `daily.upload` with the error and exit 4. The next run restores the previous archive, replays
+  the same sessions again, recreates their reports as new files and publishes them; an already
+  published daily report is not rewritten (412 ignored).
+- Update `docs/dev/setup.md` to say reports are published before the state is saved.
+- Tests: (1) a report upload failure leaves the archive generation unchanged and exits 4; the
+  next run with a working store publishes the missing report and uploads the archive;
+  (2) an archive upload conflict (412) after reports were published exits 5, and the next run
+  does not rewrite the published daily reports; (3) existing tests keep passing.
+- Coverage stays 100% for `aitrader.cloud` and `aitrader.cli`.
