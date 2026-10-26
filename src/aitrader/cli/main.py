@@ -3,7 +3,7 @@
 import os
 import shutil
 import subprocess
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
@@ -273,9 +273,7 @@ def data_fetch(
     calendar = TradingCalendar()
     now = WallClock().now()
     cutoff = now - timedelta(minutes=16)
-    last_closed = now.date()
-    while not calendar.is_session(last_closed) or calendar.session_close(last_closed) > cutoff:
-        last_closed = calendar.previous_session(last_closed)
+    last_closed = last_closed_session(calendar, now)
     try:
         last = date.fromisoformat(end)
         if not calendar.is_session(last) or calendar.session_close(last) > cutoff:
@@ -306,6 +304,30 @@ def data_fetch(
             f"corporate actions {len(info.corporate_actions)}"
         )
     typer.echo(f"snapshot hashes: {report.snapshot_hashes}")
+
+
+def last_closed_session(calendar: TradingCalendar, now: datetime) -> date:
+    """Exclude the feed's delay window, including on holidays and early closes."""
+    cutoff = now - timedelta(minutes=16)
+    session = now.date()
+    while not calendar.is_session(session) or calendar.session_close(session) > cutoff:
+        session = calendar.previous_session(session)
+    return session
+
+
+@paper_app.command("daily")
+def paper_daily(
+    state_uri: Annotated[str | None, typer.Option(help="Private gs:// state archive.")] = None,
+    reports_uri: Annotated[str | None, typer.Option(help="Private gs:// reports prefix.")] = None,
+    work_dir: Annotated[Path | None, typer.Option(help="Local job workspace.")] = None,
+    config_dir: Annotated[Path, typer.Option(help="Configuration directory.")] = Path("config"),
+    git_commit: Annotated[str | None, typer.Option(help="Source commit provenance.")] = None,
+    init: Annotated[bool, typer.Option(help="Create a missing cloud book only.")] = False,
+) -> None:
+    """Fetch closed bars and replay both PAPER books in one guarded job."""
+    from aitrader.cli.daily import run_daily
+
+    raise typer.Exit(run_daily(state_uri, reports_uri, work_dir, config_dir, git_commit, init))
 
 
 @app.command()

@@ -149,6 +149,7 @@ source_modules = [
     "aitrader.app",
     "aitrader.backtest",
     "aitrader.cli",
+    "aitrader.cloud",
     "aitrader.clock",
     "aitrader.config",
     "aitrader.data",
@@ -298,6 +299,7 @@ source_modules = [
     "aitrader.backtest",
     "aitrader.broker",
     "aitrader.cli",
+    "aitrader.cloud",
     "aitrader.config",
     "aitrader.data",
     "aitrader.domain",
@@ -322,3 +324,30 @@ name = "PAPER replay never imports the Webull adapter or SDK"
 type = "forbidden"
 source_modules = ["aitrader.app.paper", "aitrader.app.paper_reports"]
 forbidden_modules = ["aitrader.broker.webull", "webull"]
+
+[[tool.importlinter.contracts]]
+name = "Only the CLI imports cloud storage"
+type = "forbidden"
+source_modules = [
+    "aitrader.ai",
+    "aitrader.app",
+    "aitrader.backtest",
+    "aitrader.broker",
+    "aitrader.clock",
+    "aitrader.config",
+    "aitrader.data",
+    "aitrader.domain",
+    "aitrader.execution",
+    "aitrader.fees",
+    "aitrader.indicators",
+    "aitrader.metrics",
+    "aitrader.news",
+    "aitrader.notify",
+    "aitrader.ops",
+    "aitrader.portfolio",
+    "aitrader.reconcile",
+    "aitrader.risk",
+    "aitrader.storage",
+    "aitrader.strategy",
+]
+forbidden_modules = ["aitrader.cloud"]

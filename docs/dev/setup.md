@@ -220,6 +220,29 @@ sandbox behaviour. SB-4 event streaming and SB-5 market data/fill realism remain
 
 ## PAPER stage 1
 
+Run the fetch and both books with one command on Windows or Linux:
+
+```powershell
+uv run aitrader paper daily --work-dir . --config-dir config --git-commit <COMMIT>
+```
+
+This uses `data/bars`, `data/paper` (S1 reference) and `data/paper-s3` (S3 observation).
+It fetches through the latest session closed at least 16 minutes ago, then runs both books.
+The read-only data credentials must already be supplied by the operator's environment.
+Commit provenance defaults to `AITRADER_GIT_COMMIT`, then Git. Output is JSON Lines.
+Exit codes: 0 success, 2 configuration/credential error, 4 data or storage failure,
+5 usage/lock/state-generation conflict, 6 replay mismatch. On exit 6, stop, do not delete
+state, and report to the designer. A fetch failure prevents both replays and uploads;
+otherwise both books run even if one fails, and the larger book exit code is returned
+unless storage upload fails.
+
+For an already provisioned private state store, `--state-uri gs://BUCKET/OBJECT` restores
+the three directories into a new temporary workspace (or an empty `--work-dir`) and uploads
+with a generation precondition. Use `--init` only for a missing archive; it refuses an
+existing archive. `--reports-uri gs://BUCKET/PREFIX` defaults to `reports/` in the state
+bucket. Status is refreshed and new daily reports are uploaded without overwriting existing
+daily reports. A generation conflict is never retried. Cloud provisioning is outside this guide.
+
 After the latest market session has closed, the operator updates the local bars, then runs
 the two separate virtual portfolios:
 
