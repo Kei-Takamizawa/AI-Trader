@@ -102,3 +102,19 @@ report. If a fix would need a protected path, stop with BLOCKED.
 3. The fixture backtest double run is byte-identical.
 4. `git diff --stat` in LAST_REPORT shows no protected path and no change under
    `src/aitrader/broker/`, `src/aitrader/risk/`, `src/aitrader/execution/` or `config/`.
+
+## Review round 1 (2026-10-26, Codex GitHub review of 15f17d2)
+
+Finding (valid): in `atomic_write`, when `write`/`flush` fails (for example ENOSPC), the new
+`file.close()` retries the flush and can raise again, so `temporary.unlink()` never runs and a
+temporary file is left (a regression on POSIX).
+
+Required change:
+- Keep close-before-unlink ordering, but make the unlink run even if `close()` raises
+  (`try: file.close() finally: temporary.unlink(missing_ok=True)`, or equivalent). The original
+  exception from write/flush/fsync is the one that propagates; an error from `close()` during
+  cleanup must not replace it (attach it as context at most).
+- Test: simulate a failing `flush` whose subsequent `close` also raises (monkeypatch the file
+  object or `NamedTemporaryFile`), and assert the original error propagates, the target still
+  holds the old content and no temporary file remains. Must pass on Windows and Linux.
+- Coverage stays 100% for `aitrader.app`.
