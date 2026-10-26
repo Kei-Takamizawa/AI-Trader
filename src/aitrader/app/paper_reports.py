@@ -1,6 +1,7 @@
 """Atomic, local PAPER status and immutable daily reports for the operator."""
 
 import os
+from contextlib import ExitStack, suppress
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -41,15 +42,23 @@ class PaperStatus(BaseModel):
 def atomic_write(path: Path, content: str) -> None:
     """Readers see either the old complete file or the new complete file."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    with NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as file:
+    with ExitStack() as stack:
+        file = stack.enter_context(
+            NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False)
+        )
         temporary = Path(file.name)
         try:
             file.write(content)
             file.flush()
             os.fsync(file.fileno())
         except BaseException:
-            file.close()
-            temporary.unlink()
+            # Do not retry close on context exit and replace the original failure.
+            stack.pop_all()
+            try:
+                with suppress(BaseException):
+                    file.close()
+            finally:
+                temporary.unlink(missing_ok=True)
             raise
     try:
         temporary.replace(path)

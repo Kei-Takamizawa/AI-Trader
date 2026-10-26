@@ -10,6 +10,7 @@ from contextlib import closing
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any
 
 import pytest
@@ -680,6 +681,42 @@ def test_failed_atomic_write_leaves_old_complete_file(
         monkeypatch.setattr(Path, "replace", fail)
     with pytest.raises(OSError, match="simulated disk failure"):
         atomic_write(target, "new")
+    assert target.read_text() == "old"
+    assert list(tmp_path.iterdir()) == [target]
+
+
+@pytest.mark.parametrize("close_fails", [False, True])
+def test_failed_flush_cleans_up_even_if_close_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, close_fails: bool
+) -> None:
+    from aitrader.app import paper_reports
+
+    target = tmp_path / "latest.json"
+    atomic_write(target, "old")
+    original_error = OSError("original flush failure")
+    factory = NamedTemporaryFile
+
+    def failing_file(*args: Any, **kwargs: Any) -> Any:
+        file = factory(*args, **kwargs)
+        close = file.close
+
+        def fail_flush() -> None:
+            raise original_error
+
+        def fail_close() -> None:
+            # Release the real handle before simulating a buffered close failure.
+            close()
+            if close_fails:
+                raise OSError("secondary close failure")
+
+        monkeypatch.setattr(file, "flush", fail_flush)
+        monkeypatch.setattr(file, "close", fail_close)
+        return file
+
+    monkeypatch.setattr(paper_reports, "NamedTemporaryFile", failing_file)
+    with pytest.raises(OSError, match="original flush failure") as caught:
+        atomic_write(target, "new")
+    assert caught.value is original_error
     assert target.read_text() == "old"
     assert list(tmp_path.iterdir()) == [target]
 
