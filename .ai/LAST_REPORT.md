@@ -1,84 +1,86 @@
-﻿# LAST_REPORT — TASK-017 / review round 1
+﻿# LAST_REPORT — TASK-018
 
 Status: PARTIAL
 
 ## Summary
-Published both books' latest status files and newly created daily reports before saving the state archive. A report failure now leaves the previous archive available for replay; daily reports retain create-only uploads and are not rewritten after a retry or archive conflict. Added offline regression tests and updated the operator documentation. Implementation and Windows validation are complete; PARTIAL records that Linux and Windows CI were not run in this network-prohibited session.
+Anchored repository-root entries in `.gcloudignore` so Cloud Build uploads the
+`src/aitrader/data` package. Added offline upload-context checks for both ignore files,
+including an independently exercised old-content regression. Windows validation passes;
+Linux and Windows CI remain NOT_RUN because network use and Git publication are prohibited.
 
-Task / cycle: TASK-017 / review round 1 (cycle number not specified).
-Execution platform: Windows, PowerShell, CPython 3.14.9.
+Task / cycle: TASK-018 / cycle not specified.
+Platform: Windows, PowerShell, Python 3.14.9, uv 0.13.5.
 Branch: `claude/project-thread-nnl1b5`.
-HEAD: `581d0aadb36eb6881400e0ef10c60bb0c3514753`.
-CURRENT_TASK.md already contains the full task and review instructions and was preserved.
-The initial sandbox could not execute Git, so the pre-edit working tree was not verified. The first successful Git status, after editing, listed only the three implementation/docs/test files below. No unrelated changes were observed or overwritten.
+HEAD: `450a3616fb79700ec90f6cc828efff77be81a86e`.
+The first successful Git status was clean, before editing. CURRENT_TASK.md already
+contained the complete approved instructions and was preserved.
 
 ## Files changed
-- .ai/LAST_REPORT.md
-- docs/dev/setup.md
-- src/aitrader/cli/daily.py
-- tests/integration/test_daily.py
-
-No protected path, broker, risk, execution, configuration, design document, dependency or uv.lock was changed. No files were staged, committed or pushed; no branch was changed.
+- `.gcloudignore`
+- `tests/integration/test_daily.py`
+- `tests/integration/test_upload_context.py` (new; untracked, operator must include it)
+- `.ai/LAST_REPORT.md`
 
 ## Commands run
-All uv commands used process-local `UV_OFFLINE=true`, with no downloads. Existing tools were executed in the approved normal environment after sandbox execution was denied.
+All uv commands used `UV_OFFLINE=1` and existing local dependencies.
 
-- `uv run ruff check`: PASS, all checks passed.
-- `uv run ruff format --check`: PASS, 170 files already formatted.
-- `uv run mypy`: PASS, no issues in 169 source files.
-- `uv run lint-imports`: PASS, 11 contracts kept, 0 broken.
-- `uv run pytest --cov=aitrader --cov-report=term:skip-covered --basetemp=results/task017-review-final-full -o cache_dir=results/task017-review-cache`: PASS, 1536 passed in 122.75 seconds; no skipped or expected failures reported. This final run includes every change and added test.
-- `uv run coverage report --include='src/aitrader/*' --fail-under=90 --skip-covered`: PASS, overall 99%; 5569 statements, 5 missed, 1386 branches, 0 partial branches. The five missed statements are the existing non-Windows lock path in storage/instance.py (91%).
-- `uv run coverage report --include='src/aitrader/cloud/*,src/aitrader/cli/*' --fail-under=100`: PASS, 100%; 490 statements, 86 branches, none missed or partial. daily.py: 139 statements / 32 branches; cli/main.py: 226 / 22; cloud: 125 / 32.
-- `uv run pytest tests/integration/test_daily.py --cov=aitrader.cli.daily --basetemp=results/task017-review-final -o cache_dir=results/task017-review-cache`: PASS, 29 passed in 18.53 seconds, daily.py 100% statement/branch coverage.
-- Initial focused run before the final status-conflict case: PASS, 28 passed. An earlier full run also passed; the final full run above is the authoritative result.
-- `uv run aitrader backtest --data-dir tests/fixtures/bars --out-dir bt-a --start 2023-01-03 --end 2024-12-31`: PASS, run_id `bt-4d2902512eb2375b`.
-- Same backtest with `--out-dir bt-b`: PASS, same run_id.
-- PowerShell relative-path and SHA256 comparison: PASS, all 3 output files byte-identical. Removed only bt-a and bt-b after verifying their resolved absolute paths equal the expected repository-local paths.
-- `git diff --check`: PASS, no whitespace errors.
-- `git diff --exit-code -- src/aitrader/broker src/aitrader/risk src/aitrader/execution src/aitrader/config/hard_caps.py config uv.lock`: PASS, exit 0, no differences.
-- Linux CI / Windows CI: NOT_RUN, network prohibited.
-- Container image build / deployment: NOT_RUN, network and cloud provisioning outside this task.
-- GUI verification: NOT_RUN, command-line-only behavior.
+- `uv run ruff format`: PASS — 2 files reformatted, 169 unchanged.
+- `uv run ruff check`: PASS — All checks passed.
+- `uv run ruff format --check`: PASS — 171 files already formatted.
+- `uv run mypy`: PASS — no issues in 170 source files.
+- `uv run lint-imports`: PASS — 11 contracts kept, 0 broken.
+- `uv run pytest tests/integration/test_upload_context.py tests/integration/test_daily.py::test_container_files -v`: PASS — 6 passed, 1 warning in 5.01 seconds.
+- `uv run pytest --cov=aitrader`: PASS — 1541 passed, 1 warning in 129.06 seconds.
+- `uv run coverage report --include='src/aitrader/*' --fail-under=90`: PASS — exit 0; total 99% (5569 statements, 5 missed, 1386 branches, 0 partial). `storage/instance.py` is 91%; all other reported files are 100%.
+- `git diff --check`: PASS — no output before report writing.
+- `git diff --stat`: only `.gcloudignore` and `test_daily.py` before report writing; `git status --short` also confirmed the untracked new test.
+- Old-content direct probe via `uv run python -`: EXPECTED FAIL — exit 1, `AssertionError: Required files excluded`, listing six source files under `src/aitrader/data/`: adjusted.py, alpaca.py, bars.py, ingest.py, quality.py, __init__.py.
 
-Implementation diff stat (`git diff --stat -- docs/dev/setup.md src/aitrader/cli/daily.py tests/integration/test_daily.py`):
+Old-content probe reproduction (PowerShell; does not modify the ignore file):
 
-```text
- docs/dev/setup.md               |  6 ++-
- src/aitrader/cli/daily.py       |  8 +++-
- tests/integration/test_daily.py | 81 ++++++++++++++++++++++++++++++++++++++++-
- 3 files changed, 91 insertions(+), 4 deletions(-)
+```powershell
+$env:UV_OFFLINE='1'
+@"
+import runpy
+m = runpy.run_path('tests/integration/test_upload_context.py')
+rules = m['REPO'].joinpath('.gcloudignore').read_text(encoding='utf-8')
+old = '\n'.join(line.removeprefix('/').replace('!/', '!') for line in rules.splitlines())
+m['assert_uploads'](old)
+"@ | uv run python -
 ```
 
-The report itself is the fourth changed file. The stat has no protected path or uv.lock change.
-
 ## Acceptance criteria
-- [x] Publish reports before state — test_cloud_init_repeat_and_reports verifies both latest status files are first and the archive is last.
-- [x] Report failure exits 4 and preserves the archive generation — test_report_failure_replays_before_saving_state covers status failure, status precondition failure, and partial daily-report publication failure.
-- [x] The next run publishes the missing report and saves the archive without rewriting published daily reports — the same test restores generation 7, retries, and verifies generation 8 and immutable previously published reports.
-- [x] Archive conflict after report publication exits 5; the next run does not rewrite daily reports — test_archive_conflict_after_reports_retries_without_rewriting checks unchanged archive generation 3, eight published reports, successful retry to generation 4, and one successful write per daily report.
-- [x] Existing regression coverage remains green — final full suite, 1536 passed. The older conflict assertion now checks immutable archive and daily-report objects separately because latest status files are intentionally published before the archive conflict.
-- [x] cloud and CLI remain at 100% statement/branch coverage; overall coverage gate unchanged — final coverage reports above.
-- [x] Fixture backtest double run is byte-identical — matching filenames and SHA256 for all three files.
-- [x] Protected paths, broker/risk/execution/config and dependencies unchanged — exit-0 Git check and implementation stat above.
-- [x] Setup documentation explains reports are published before state is saved and how failure recovers.
-- [x] Windows/Linux command differences recorded below.
-- [ ] Linux and Windows CI green — NOT_RUN; operator must run CI for the committed revision.
+- [x] Windows AGENTS.md checks green — all six required commands passed.
+- [ ] Linux and Windows CI green — NOT_RUN; operator must publish and check CI.
+- [x] New test fails on old content and passes on new content — direct probe above, `test_old_gcloudignore_drops_required_source`, and `test_upload_context`.
+- [x] Changes limited to ignore configuration, tests, and this report — Git diff/status; no product code or `.dockerignore` changes.
+- [x] Required upload set and excluded examples checked for both ignore files — `test_upload_context`; matcher semantics exercised by `test_matcher_semantics`.
 
 ## Expected / Actual
-Report upload failure: expected exit 4, daily.upload error log and previous archive unchanged; actual verified for both status and daily-report failures, including status HTTP-412-equivalent errors.
-Retry: expected replay to recreate missing reports, create-only conflict tolerance and archive advance; actual eight daily reports exist after recovery, with previously published bytes/generations unchanged.
-Archive conflict: expected reports may already be published, exit 5 without retry, unchanged archive; actual verified, followed by successful retry with no daily-report rewrite.
-All invocation helper checks require every stdout line to parse as JSON and contain UTC ts, severity, event and exit_code; daily.end matches the process exit code.
+Expected: source package and build inputs upload; root runtime data and sensitive-name
+paths do not; live example configuration uploads. Actual: both upload-context checks pass.
+The matcher checks ordered negation, directory ancestors, root anchoring, segment stars,
+and recursive stars. Enumeration reads names only and skips `.git`. Generated
+`__pycache__` files are omitted from the required source set because the explicit cache
+exclusions must still work.
 
 ## Errors and warnings
-- Sandbox: git and uv were not recognized on PATH. The located Git executable returned `Access is denied`; virtual-environment Python returned `error: uv trampoline failed to spawn Python child process` / `Caused by: permission denied (os error 5)`. Approved normal-environment execution resolved tool access. These were execution-environment failures, not test failures.
-- Git warns that LF will be replaced by CRLF when it next touches daily.py and test_daily.py. Whitespace checks pass.
+Initial Git lookup failed because Git was absent from PATH; explicit Git and Python
+execution were denied in the sandbox. Approved execution outside the sandbox succeeded.
+No authentication or network was used. The first direct probe had a PowerShell quoting
+syntax error; the corrected stdin probe produced the expected assertion failure.
+uv warned that the existing build-system range excludes uv 0.13.5; dependencies were not changed.
+Focused pytest warned about an existing `.pytest_cache` path (WinError 183).
+The full suite reported one warning; its full warning text was truncated in captured output.
+An initial report patch was rejected before writing; the report was then saved successfully.
 
 ## Deviations from the task or the design
-None from the review instructions. The review explicitly replaces the archive-before-reports sequence in the original task and design document 15 section 4; the design document was left unchanged as required.
-Windows command difference: Bash `diff -r bt-a bt-b && rm -rf bt-a bt-b` was implemented with PowerShell relative-path/SHA256 comparison and Remove-Item after resolved-path boundary checks. The uv checks have no intended Windows/Linux command difference; Linux execution remains NOT_RUN.
+None in implementation. CI completion is deferred to the operator. A separate test file
+holds the matcher and behavioral tests; existing container expectations were updated in
+test_daily.py.
 
 ## Open issues and questions
-Operator action: commit only the four listed files and run Linux/Windows CI. No product design decision is required for this review fix.
-Intentionally not performed: Git staging/commit/push/branch changes, network API calls, real credential or market-data access, cloud resources, image build, deployment, notifications, or new dependencies.
+Operator must include the new test file and verify Linux and Windows CI. No design
+decision is required. No commit, push, branch change, deployment, or network access occurred.
+GUI checks: NOT_RUN (no GUI change).
+Fixture backtest comparison: NOT_RUN (backtest untouched).

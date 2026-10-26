@@ -385,7 +385,7 @@ def test_container_files() -> None:
         assert required in docker
     for name in (".dockerignore", ".gcloudignore"):
         ignore = (REPO / name).read_text().splitlines()
-        assert {
+        expected = {
             ".git",
             ".venv",
             "data/",
@@ -395,7 +395,17 @@ def test_container_files() -> None:
             "**/*token*",
             "config/live*.yaml",
             "!config/live.example.yaml",
-        } <= set(ignore)
+        }
+        if name == ".gcloudignore":
+            expected = {
+                line
+                if line.startswith(("**/", ".env"))
+                else "!/" + line[1:]
+                if line.startswith("!")
+                else "/" + line
+                for line in expected
+            }
+        assert expected <= set(ignore)
 
 
 def test_fetch_inputs_and_missing_credentials(
