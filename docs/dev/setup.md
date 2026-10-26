@@ -243,7 +243,7 @@ existing archive. `--reports-uri gs://BUCKET/PREFIX` defaults to `reports/` in t
 bucket. Status is refreshed and new daily reports are published before the state archive is
 saved, without overwriting existing daily reports. If a report upload fails, the archive stays
 unchanged so the next run can replay those sessions and publish the missing reports. A generation
-conflict is never retried. Cloud provisioning is outside this guide.
+conflict is never retried. Cloud provisioning: `docs/dev/cloud-run.md`.
 
 After the latest market session has closed, the operator updates the local bars, then runs
 the two separate virtual portfolios:
