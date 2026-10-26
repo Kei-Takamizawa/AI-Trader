@@ -105,6 +105,8 @@ def _upload_reports(store: StateStore, prefix: str, work: Path, before: set[Path
         if status.exists():
             key = f"{prefix.rstrip('/')}/{name}/status/latest.json"
             store.upload(key, status.read_bytes(), _latest_generation(store, key))
+    for name in ("paper", "paper-s3"):
+        root = work / "data" / name
         for path in sorted((root / "reports/daily").glob("*")):
             if path not in before and path.is_file():
                 with suppress(PreconditionFailed):
@@ -176,13 +178,17 @@ def _execute(
                 )
         stage = "daily.upload"
         if store is not None and reports_store is not None:
+            # Keep the previous archive replayable until all new reports are published.
+            try:
+                _upload_reports(reports_store, prefix, work, before)
+            except PreconditionFailed:
+                raise CloudError("report upload failed") from None
             try:
                 generation = store.upload(name, pack(work), generation)
             except PreconditionFailed:
                 raise PreconditionFailed(
                     "another writer changed the state; nothing retried"
                 ) from None
-            _upload_reports(reports_store, prefix, work, before)
         _log(clock, stage, generation=generation)
         return max(codes)
     except (CloudError, DataError, DataSourceError, ConfigError, ValueError, OSError) as exc:

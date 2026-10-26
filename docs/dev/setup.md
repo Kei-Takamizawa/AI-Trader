@@ -240,8 +240,10 @@ For an already provisioned private state store, `--state-uri gs://BUCKET/OBJECT`
 the three directories into a new temporary workspace (or an empty `--work-dir`) and uploads
 with a generation precondition. Use `--init` only for a missing archive; it refuses an
 existing archive. `--reports-uri gs://BUCKET/PREFIX` defaults to `reports/` in the state
-bucket. Status is refreshed and new daily reports are uploaded without overwriting existing
-daily reports. A generation conflict is never retried. Cloud provisioning is outside this guide.
+bucket. Status is refreshed and new daily reports are published before the state archive is
+saved, without overwriting existing daily reports. If a report upload fails, the archive stays
+unchanged so the next run can replay those sessions and publish the missing reports. A generation
+conflict is never retried. Cloud provisioning is outside this guide.
 
 After the latest market session has closed, the operator updates the local bars, then runs
 the two separate virtual portfolios:

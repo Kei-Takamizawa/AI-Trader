@@ -104,6 +104,11 @@ def test_cloud_init_repeat_and_reports(job: tuple[Store, Path]) -> None:
     store, config = job
     first = invoke(config, "--state-uri", "gs://bucket/state/a", "--init")
     assert first.exit_code == 0, first.output
+    assert store.writes[:2] == [
+        "reports/paper/status/latest.json",
+        "reports/paper-s3/status/latest.json",
+    ]
+    assert store.writes[-1] == "state/a"
     reports = {k: v for k, v in store.objects.items() if "/reports/daily/" in k}
     assert len(reports) == 8
     second = invoke(config, "--state-uri", "gs://bucket/state/a")
@@ -129,7 +134,81 @@ def test_missing_existing_conflict(job: tuple[Store, Path]) -> None:
     result = invoke(config, "--state-uri", "gs://bucket/state/a")
     assert result.exit_code == 5
     assert "another writer" in result.stdout
-    assert store.objects == before
+    assert store.objects["state/a"] == before["state/a"]
+    assert {k: v for k, v in store.objects.items() if "/reports/daily/" in k} == {
+        k: v for k, v in before.items() if "/reports/daily/" in k
+    }
+
+
+@pytest.mark.parametrize(
+    ("failed_suffix", "error"),
+    [
+        ("status/latest.json", CloudError),
+        ("status/latest.json", PreconditionFailed),
+        ("reports/daily/2024-12-31.md", CloudError),
+    ],
+)
+def test_report_failure_replays_before_saving_state(
+    job: tuple[Store, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    failed_suffix: str,
+    error: type[CloudError],
+) -> None:
+    store, config = job
+    store.objects["state/a"] = pack(config.parent / "empty"), 7
+    archive = store.objects["state/a"]
+    original = store.upload
+
+    def upload(name: str, data: bytes, generation: int) -> int:
+        if name == f"reports/paper-s3/{failed_suffix}":
+            raise error("report unavailable")
+        return original(name, data, generation)
+
+    monkeypatch.setattr(store, "upload", upload)
+    result = invoke(config, "--state-uri", "gs://bucket/state/a")
+    assert result.exit_code == 4, result.output
+    assert store.objects["state/a"] == archive
+    assert "state/a" not in store.writes
+    logs = [json.loads(line) for line in result.stdout.splitlines()]
+    assert logs[-2]["event"] == "daily.upload"
+    assert logs[-2]["exit_code"] == 4
+    published = {k: v for k, v in store.objects.items() if "/reports/daily/" in k}
+    if failed_suffix.startswith("reports/daily/"):
+        assert published
+    else:
+        assert not published
+
+    monkeypatch.setattr(store, "upload", original)
+    retry = invoke(config, "--state-uri", "gs://bucket/state/a")
+    assert retry.exit_code == 0, retry.output
+    assert store.objects["state/a"][1] == 8
+    assert f"reports/paper-s3/{failed_suffix}" in store.objects
+    assert len([k for k in store.objects if "/reports/daily/" in k]) == 8
+    assert all(store.objects[k] == v for k, v in published.items())
+    assert all(store.writes.count(k) == 1 for k in published)
+    assert store.writes[-1] == "state/a"
+
+
+def test_archive_conflict_after_reports_retries_without_rewriting(job: tuple[Store, Path]) -> None:
+    store, config = job
+    store.objects["state/a"] = pack(config.parent / "empty"), 3
+    archive = store.objects["state/a"]
+    store.conflict = True
+    result = invoke(config, "--state-uri", "gs://bucket/state/a")
+    assert result.exit_code == 5, result.output
+    assert "another writer" in result.stdout
+    assert store.objects["state/a"] == archive
+    reports = {k: v for k, v in store.objects.items() if "/reports/daily/" in k}
+    assert len(reports) == 8
+    assert "state/a" not in store.writes
+
+    store.conflict = False
+    retry = invoke(config, "--state-uri", "gs://bucket/state/a")
+    assert retry.exit_code == 0, retry.output
+    assert store.objects["state/a"][1] == 4
+    assert all(store.objects[k] == v for k, v in reports.items())
+    assert all(store.writes.count(k) == 1 for k in reports)
+    assert store.writes[-1] == "state/a"
 
 
 @pytest.mark.parametrize(("error", "code"), [(DataSourceError, 4), (ConfigError, 2), (OSError, 4)])
