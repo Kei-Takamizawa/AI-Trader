@@ -30,7 +30,7 @@ in this build.
 | TASK-014 | Strategy S3 (plan `docs/research/2026-10-24-s3-plan.md`), neighbour stability, cost share, faster backtests | done (Codex cycle 7, PR #10) |
 | S3 research | S3 and S3-R1 on real data (N = 25) | done: `docs/research/2026-10-24-s3-results.md`; neither passes (S3 fails only the deflated Sharpe, 0.58 < 0.80) |
 | TASK-015 | S3 as a PAPER observation book next to S1 (owner decision 2026-10-24; not a candidate) | done (Codex cycle 8, PR #12); both books start after the first closed session on or after 2026-10-26 |
-| TASK-016 | Windows operator PC: file lock, atomic write, test portability, Windows CI job | **in progress** (Codex cycle 9) |
+| TASK-016 | Windows operator PC: file lock, atomic write, test portability, Windows CI job | done (Codex cycle 9, PR #13, review round 1) |
 
 All of the above up to TASK-010 is on `main`: pull request
 [Kei-Takamizawa/AI-Trader#1](https://github.com/Kei-Takamizawa/AI-Trader/pull/1) was merged on
@@ -42,8 +42,8 @@ CI-safe temporary directory in the property test).
 The operator PC is the owner's Windows 11 PC since 2026-10-26 (owner decision; repository in
 `D:\my-workspace\AI-Trader`; uv 0.13.5, CPython 3.14.9, codex-cli 0.164.0, Codex signed in).
 The Mac is retired and its copy is removed by the owner. The Alpaca and Webull sandbox keys are
-Windows user environment variables. Until TASK-016 is merged, PAPER and about 70 tests fail on
-Windows (file lock, atomic write cleanup, subprocess encoding, POSIX mode checks).
+Windows user environment variables. TASK-016 made PAPER and the full suite pass on Windows; CI
+runs the tests on Linux and Windows.
 
 ### First real download (2026-10-24, `--end 2026-10-16`)
 
