@@ -79,7 +79,12 @@ images: [${REPO}:$C]
 gcloud builds submit --region=$R --config=D:\my-workspace\ops\gcp\cloudbuild.yaml .
 ```
 
-`.gcloudignore` keeps `data/`, `.git`, `.venv` and secrets out of the upload. Record in the
+`.gcloudignore` keeps the root `data/`, `.git`, `.venv` and secrets out of the upload. Before
+the first build after any change to `.gcloudignore`, check that the package is complete:
+`gcloud meta list-files-for-upload | Select-String "src[\\/]aitrader[\\/]data[\\/]"` must list the
+six files of `src/aitrader/data/`, and no line may start with `data` or contain `.env`.
+Cloud Build stages the source in its own bucket `gs://aitrader-paper_cloudbuild` (created
+automatically, a few MB; cost negligible). Record in the
 report: the commit, the image digest and the base image digest shown in the build log, the build
 minutes and the image size (`gcloud artifacts docker images list $REPO --include-tags`). If the
 build fails with a permission error on pushing to Artifact Registry, stop and report the exact
