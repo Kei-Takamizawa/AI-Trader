@@ -40,9 +40,11 @@ codex exec --cd . --sandbox workspace-write \
 ## Credentials
 
 - The Alpaca data key lives **only on the operator PC**, as the user environment variables
-  `AITRADER_DATA_API_KEY` and `AITRADER_DATA_API_SECRET`. Never in the repository, in CI, in a
-  Codex or Claude configuration file, in a prompt or in a chat. Codex never needs it: all tests run
-  offline. Only the operator runs `aitrader data fetch`.
+  `AITRADER_DATA_API_KEY` and `AITRADER_DATA_API_SECRET`, and in Secret Manager of the Google
+  Cloud project `aitrader-paper`, where the owner enters it in the console and only the PAPER
+  Cloud Run job reads it (owner decision 2026-10-26, document 15). Never in the repository, in CI,
+  in a Codex or Claude configuration file, in a prompt or in a chat. Codex never needs it: all
+  tests run offline. Only the operator and that Cloud Run job run `aitrader data fetch`.
 - Real market data stays under `data/` (git-ignored) and is never committed. Backtest reports
   (metrics, manifests) may be committed under `reports/`.
 

@@ -1,8 +1,9 @@
 # 15. PAPER daily run on Google Cloud at zero cost
 
-- **Status:** Proposal for owner review (designer, 2026-10-26). Nothing has been created in
-  Google Cloud. Creating the project, linking billing and storing the data key in the cloud each
-  need the owner's explicit approval at that time.
+- **Status:** Approved by the owner on 2026-10-26 (option A, including the secrets rule change in
+  section 6). Nothing has been created in Google Cloud yet. The owner creates the billing account,
+  the project and the secret values (section 8, step 1); creating resources in the project
+  (step 3) and the cut-over (step 5) are asked for at that time.
 - **Owner direction (2026-10-26):** move the daily automated PAPER run to Google Cloud soon,
   free of charge, while strategies are improved; no real money until a strategy passes.
 - **Prices:** checked on the official pages listed in section 10 on 2026-10-26. Tags follow the
@@ -128,9 +129,8 @@ the operator PC.
   never pass through Claude, Codex, a chat, the repository or CI. Free tier: 6 active versions and
   10,000 accesses per month [V]; we use 2 versions and ≈ 50 accesses.
 - Webull keys of any kind are not placed in this project. PAPER uses SimBroker.
-- **Rule change needing owner approval:** `CLAUDE.md` says the data key lives only on the operator
-  PC. Approving this design changes that to "on the operator PC and in Secret Manager of project
-  `aitrader-paper`". `CLAUDE.md` is updated in the same PR as the approval.
+- **Rule change (approved by the owner 2026-10-26):** the data key lives on the operator PC and in
+  Secret Manager of project `aitrader-paper`. `CLAUDE.md` is updated accordingly.
 
 ## 7. Guards against charges
 
@@ -188,7 +188,7 @@ alert, the spend cap and the resource-type rule above address those.
 |---|---|---|---|
 | 0 | Owner | Approve this design and the secrets rule change (section 6) | Approval in the PR or thread |
 | 1 | Owner | Create or choose a billing account (card required), create project `aitrader-paper`, link billing, set the JPY 100 budget, store the two secrets in the console | Project exists; budget emails go to the owner |
-| 2 | Codex (TASK-017) | `aitrader paper daily`: computes the latest closed session with the exchange calendar, runs fetch and both books in one process with the existing exit codes; state archive download/upload with generation precondition behind a small storage interface (local-directory fake for tests, Cloud Storage adapter in `aitrader.ops`, the only module allowed to import `google.cloud.storage`); `Dockerfile` on a pinned `python:3.14-slim` with `uv sync --frozen --no-dev`; all tests offline | CI green; the Windows task can call the same command |
+| 2 | Codex (TASK-017, spec in `.ai/CURRENT_TASK.md`) | `aitrader paper daily`: computes the latest closed session with the exchange calendar, runs fetch and both books in one process; state archive download/upload with generation precondition through a small Cloud Storage JSON API client on the standard library (no new dependency), tested offline against a local fake server; `Dockerfile`; all tests offline | CI green; the Windows task can call the same command |
 | 3 | Operator (Claude Code on the PC, owner signed in to `gcloud`) | Create the resources with the runbook commands written in TASK-017 (bucket, Artifact Registry repo + cleanup policy, service accounts and bindings, job, scheduler, alert, spend cap) | `gcloud run jobs execute` succeeds once by hand |
 | 4 | Both | Shadow run for 5 trading days: Windows task unchanged, cloud writes its own state; designer compares the two `latest.json` files and daily reports each day | Identical equity, positions and session hashes on all 5 days |
 | 5 | Owner | Approve cut-over; operator disables the Windows task (kept, not deleted, as a manual fallback that first downloads the cloud state) | Cloud is the only scheduled writer |

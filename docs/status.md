@@ -91,10 +91,11 @@ as the reference strategy, and research S1 1.1 in parallel.
    Later P3 tasks: scheduler, live data adapter, virtual portfolio, reconciliation, kill switch,
    heartbeat, notifications, daily report. Cloud deployment needs the owner's approval to create
    the Google Cloud project `aitrader-paper` (asked at that time).
-   Proposal 2026-10-26 (owner wants the daily run on Google Cloud soon, free only):
+   Approved 2026-10-26 (owner wants the daily run on Google Cloud soon, free only):
    `docs/design/15-cloud-paper-free-tier.md`, a Cloud Run job + Cloud Scheduler in
-   `aitrader-paper`; waiting for the owner's approval of the design, the secrets rule change and
-   the project and billing set-up.
+   `aitrader-paper`, including the data key in Secret Manager. Next: the owner creates the
+   billing account, project and secrets; Codex implements TASK-017 (`aitrader paper daily`,
+   state archive in Cloud Storage, Dockerfile).
 
 ## Open items
 

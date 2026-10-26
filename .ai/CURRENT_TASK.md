@@ -1,120 +1,155 @@
-# CURRENT_TASK — TASK-016: Windows operator PC
+# CURRENT_TASK — TASK-017: one-command daily PAPER run, ready for a Cloud Run job
 
 Designer: Claude, 2026-10-26. Implementer and tester: Codex. Read `AGENTS.md` first.
-The previous task's spec is archived in `docs/tasks/TASK-015.md`.
+The previous task's spec is archived in `docs/tasks/TASK-016.md`.
 
-Owner decision 2026-10-26: the operator PC moves from the Mac to Windows 11
-(`D:\my-workspace\AI-Trader`, Windows PowerShell 5.1, uv 0.13.5, CPython 3.14.9). PAPER must run
-there from its first session (2026-10-26 close). On Windows today ruff, mypy and lint-imports
-pass, but about 70 tests fail and `aitrader paper run` crashes. The engine is still designed to
-run on Linux later (document 04); this task makes the existing behaviour correct on Windows too,
-without changing any behaviour on Linux or macOS.
+Owner decision 2026-10-26: the daily PAPER run moves to a Google Cloud Run job started by Cloud
+Scheduler, at zero cost (design `docs/design/15-cloud-paper-free-tier.md`, read sections 3, 4
+and 5). This task builds everything that can be built and tested offline. Nothing in Google Cloud
+exists yet; no test may reach the network or Google Cloud.
 
-No protected path is touched. Do not edit `src/aitrader/broker/webull/`, `src/aitrader/risk/`,
-`src/aitrader/execution/` or `config/`.
-
-## Failures seen on Windows (operator run, 2026-10-26)
-
-1. `src/aitrader/storage/instance.py`, `SingleInstanceLock`: `msvcrt.locking` locks and unlocks
-   the byte range starting at the **current file position**. `acquire` writes the PID after
-   locking, so `release` tries to unlock a different range and raises
-   `PermissionError: [Errno 13]`. Every `run_paper` call fails in `__exit__`
-   (`tests/integration/test_paper.py`, almost all tests; `tests/unit/storage/test_storage.py::
-   test_a_second_engine_cannot_take_the_file_lock`).
-2. `src/aitrader/app/paper_reports.py`, `atomic_write`: when `fsync` fails, the temporary file is
-   unlinked while still open; Windows refuses (`WinError 32`), so the original error is masked
-   and the temporary file is left behind (`test_failed_atomic_write_leaves_old_complete_file
-   [flush]`).
-3. `tests/architecture/test_import_contracts.py::test_forbidden_import_breaks_a_contract`: the
-   `lint-imports` subprocess output is decoded with the Windows locale code page (cp932 here),
-   `UnicodeDecodeError` in the reader thread, `result.stdout` is `None`.
-4. `tests/unit/broker/test_webull.py::test_real_sdk_client_override_pin_no_retries_and_cleanup`
-   and `tests/unit/broker/test_webull_tokens.py::test_sdk_token_enabled_normal_or_disabled`
-   assert `st_mode & 0o777 == 0o700` on the token directory. Windows does not implement POSIX
-   mode bits (`os.chmod` only toggles read-only); the directory is under the user's own
-   `%TEMP%`, protected by the profile ACL.
-
-Run the full suite on Windows yourself first; if a failure appears that is not one of these four
-kinds, fix it the same way (smallest change, no behaviour change on POSIX) and list it in the
-report. If a fix would need a protected path, stop with BLOCKED.
+No protected path is touched. Do not edit `src/aitrader/broker/`, `src/aitrader/risk/`,
+`src/aitrader/execution/`, `src/aitrader/config/hard_caps.py` or `config/`. Do not add a
+dependency: the Cloud Storage client is written on the standard library (`urllib`, `json`,
+`tarfile`), like the Alpaca client in `src/aitrader/data/alpaca.py`.
 
 ## Scope
 
-### A. Single-instance lock (product code)
+### A. Latest closed session (refactor, no behaviour change)
 
-- Lock and unlock the same byte range regardless of the file position: seek to offset 0 before
-  `msvcrt.locking` in both `_lock` and `_unlock` (and restore nothing else). Keep the POSIX
-  `fcntl.flock` path unchanged.
-- Remove the `# pragma: no cover` claim that Windows is only for dev PCs; update the module
-  docstring to say the file lock works on POSIX and Windows. Coverage is measured per platform:
-  keep the Windows branch excluded from coverage on Linux CI the same way it is today (a
-  platform-specific pragma is fine), and make sure it is exercised by the tests on Windows.
-- Tests: acquire, write PID, release, acquire again in the same process; a second process (or a
-  second handle) is refused while held and succeeds after release. Must pass on Windows and Linux.
+- Move the "last closed session at least 16 minutes ago" loop from `data_fetch` in
+  `src/aitrader/cli/main.py` into a pure function (for example
+  `last_closed_session(calendar, now) -> date` next to the CLI or in `aitrader.app`) and use it in
+  `data_fetch`. Same results; existing tests keep passing.
+- Tests: a weekday after close, a weekday before close + 16 minutes, a weekend, a market holiday,
+  the minute boundary (exactly 16 minutes after close is closed).
 
-### B. Atomic write (product code)
+### B. `aitrader paper daily` (new command, product code)
 
-- `atomic_write` closes the temporary file before unlinking it on failure, so the original
-  exception propagates and no temporary file is left, on every platform. Same success behaviour.
-- The existing test covers it; it must pass on Windows.
+Runs the whole daily job in one process, in this order, with the existing functions (no
+subprocesses):
 
-### C. Test portability (tests only)
+1. If `--state-uri gs://BUCKET/OBJECT` is given: download the archive (section C), remember its
+   generation, and unpack it into `--work-dir` (default: a new temporary directory). Without
+   `--state-uri`, work in place on the existing directories (this is how the Windows task can
+   use the same command).
+2. Fetch: same as `aitrader data fetch` with `--end` = `last_closed_session(...)` for the
+   `WallClock` now, into `<work-dir>/data/bars`.
+3. S1 book: same as `aitrader paper run` with `config/paper.yaml` and `<work-dir>/data/paper`.
+4. S3 book: same as `aitrader paper run --config config/paper-s3.yaml` with
+   `<work-dir>/data/paper-s3`.
+5. If `--state-uri` is given: pack `data/bars`, `data/paper` and `data/paper-s3` and upload with
+   `ifGenerationMatch=<remembered generation>`; then upload each book's `status/latest.json` and
+   the daily report files created in this run to `--reports-uri gs://BUCKET/PREFIX` (default:
+   `reports/` in the same bucket), under `<prefix>/<book>/…` with `<book>` = `paper` or
+   `paper-s3`. Report files that already exist in the bucket are not rewritten (upload with
+   `ifGenerationMatch=0`; 412 for a report is not an error).
 
-- Subprocesses in tests that read text output use `encoding="utf-8"` (and set
-  `PYTHONIOENCODING=utf-8` / `PYTHONUTF8=1` in the child env where the child is Python).
-- The two Webull token-directory tests check `0o700` only on POSIX; on Windows they check that
-  the directory exists inside the expected temporary root during the run and is removed after.
-  Do not change the adapter.
-- Any other test that assumes POSIX paths, `/` separators, line endings or file modes gets the
-  smallest portable fix. Never skip a test on Windows unless the behaviour itself is POSIX-only,
-  and then say why in the test and in the report.
+Rules:
 
-### D. CI on Windows
+- `--config-dir` (default `config`) and `--git-commit` (default: env `AITRADER_GIT_COMMIT`, then
+  the existing `_git_commit`) are passed through, so the container needs no `.git`.
+- If fetch fails, do not run the books and do not upload; exit with the fetch exit code.
+- If fetch succeeds, run both books even if the first one fails, then upload (a HALTED book
+  must persist its state and reports). Exit code = the larger of the two book exit codes
+  (0, 4, 5 or 6), or the upload's exit code if the upload fails.
+- Missing archive (404) is an error (exit 4, message says to pass `--init`), unless `--init` is
+  given: then start from empty directories and upload with `ifGenerationMatch=0` (create only).
+  `--init` with an existing archive is refused (exit 5). This prevents silently resetting the
+  books.
+- Upload conflict (412 on the archive) → exit 5 with a message that another writer changed the
+  state; nothing is retried.
+- Logging: one JSON object per line on stdout for each step (`event`: `daily.start`,
+  `daily.restore`, `daily.fetch`, `daily.book`, `daily.upload`, `daily.end`), with `ts` (UTC ISO),
+  `severity` (`INFO`, `WARNING` or `ERROR`; Cloud Logging reads this field), `exit_code`, and the
+  step's summary values (session date, symbols, snapshot hashes, book state, sessions added,
+  equity, object generation). `daily.end` carries the final `exit_code`. Exit 6 adds
+  `"action": "stop; do not delete state; report to the designer"`. Never log secrets, tokens or
+  signed URLs.
+- `assert_no_live_credentials` runs first, as in `data fetch`.
 
-- `.github/workflows/ci.yml`: add a second job `windows` on `windows-latest` with the same uv
-  version and Python, running `uv sync --frozen`, `uv run pytest` and
-  `uv run aitrader live` (expect exit 3, written for PowerShell or `shell: bash`). The coverage
-  gate stays on the Linux job only. Do not change the Linux job.
+### C. Cloud Storage state store (product code, standard library only)
+
+New package `aitrader.cloud` (or module, your choice) with:
+
+- A small `StateStore` protocol: `download(name) -> (bytes, generation)`,
+  `upload(name, data, if_generation_match) -> generation`, with typed errors `NotFound` and
+  `PreconditionFailed`.
+- `GcsStateStore(bucket, transport=..., token_provider=...)` using the Cloud Storage JSON API:
+  - download: `GET https://storage.googleapis.com/storage/v1/b/{bucket}/o/{object}?alt=media`
+    (object name URL-encoded with `quote(name, safe="")`); generation from the
+    `x-goog-generation` response header;
+  - upload: `POST https://storage.googleapis.com/upload/storage/v1/b/{bucket}/o?uploadType=media&name={object}&ifGenerationMatch={n}`
+    with `Content-Type: application/gzip` (or `application/json` / `text/markdown` for reports);
+    generation from the JSON response;
+  - 404 → `NotFound`, 412 → `PreconditionFailed`, other non-2xx → a `DataSourceError`-like typed
+    error with status code only (no response body in the message).
+  - Token: `GET http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token`
+    with header `Metadata-Flavor: Google`; cache it until 60 s before `expires_in`. The token is
+    never logged or written to disk.
+  - Timeouts on every request; transport injectable like `AlpacaDataClient`.
+- Archive helpers: `pack(work_dir) -> bytes` (gzip tar of the three directories, relative paths
+  only, no symlinks) and `unpack(data, work_dir)` with `tarfile` `filter="data"`; refuse members
+  outside the three directories.
+- `parse_gs_uri("gs://bucket/path") -> (bucket, object)` with clear errors for anything else.
+- Import contract in `pyproject.toml`: only `aitrader.cli` may import the new package (add a
+  `forbidden` contract listing every other top-level package as source). Do not loosen any
+  existing contract.
+
+### D. Container files
+
+- `Dockerfile` at the repository root:
+  - `FROM python:3.14-slim` (the operator pins the digest at build time; leave a comment saying so);
+  - uv from `ghcr.io/astral-sh/uv:0.11.32` (the CI version) via `COPY --from=`;
+  - `uv sync --frozen --no-dev` into the image; non-root user; `WORKDIR /app` with `config/`
+    copied in;
+  - `ARG GIT_COMMIT` → `ENV AITRADER_GIT_COMMIT=$GIT_COMMIT`;
+  - `ENTRYPOINT ["aitrader", "paper", "daily"]` (arguments come from the job definition).
+- `.dockerignore` and `.gcloudignore` excluding `.git`, `.venv`, `data/`, `results/`, `bt-*`,
+  caches, `.env*`, `config/live*.yaml` (except the example) and token files.
+- No secret, bucket name or project ID in these files.
 
 ### E. Docs
 
-- `docs/dev/setup.md`: a short "Windows operator PC" section: uv via `winget install
-  astral-sh.uv`; `UV_LINK_MODE=copy` when the uv cache and the repository are on different
-  drives; credentials as Windows **user** environment variables (no values, no commands that
-  echo values); commands are the same with `uv run`; the fixture backtest comparison uses
-  `Compare-Object`/`fc.exe` or `git diff --no-index` instead of `diff -r` in PowerShell.
+- `docs/dev/setup.md`, section "PAPER stage 1": add `aitrader paper daily` (local use on Windows
+  and the exit codes above). Do not write Google Cloud set-up commands; the designer writes that
+  runbook after the owner creates the project.
 
-## Tests
+## Tests (all offline)
 
-1. The full suite passes on Windows (operator PC) and on Linux (CI).
-2. New lock tests as in A.
-3. `atomic_write` failure test passes on Windows (no temporary file left, original error raised).
+1. `last_closed_session` cases in A.
+2. `GcsStateStore` against a local HTTP server (as in
+   `tests/unit/data/test_alpaca.py::test_urllib_transport_against_a_local_server`) or an
+   injected transport: download with generation, 404, 412 on upload, other status, URL encoding of
+   object names with `/`, token caching and refresh, metadata header present, token never in
+   exception text. Close every response (no `ResourceWarning` under `-W error`).
+3. Archive: pack/unpack round trip byte-identical files; members with `..`, absolute paths,
+   symlinks or outside the three directories are refused.
+4. `paper daily` end to end with a fake `StateStore` and fake fetch (fixture bars, no network):
+   first run with `--init`; second run restores and adds no session; missing archive without
+   `--init` → 4; `--init` with an archive → 5; upload conflict → 5 and the store unchanged;
+   fetch failure → books not run and nothing uploaded; one book exit 6 → the other book still
+   runs, state uploaded, final exit 6 and the `action` field logged; reports uploaded once and not
+   rewritten on the next run. Every stdout line parses as JSON with `ts`, `severity`, `event`.
+5. Local mode (no `--state-uri`) on fixture data produces the same book as two separate
+   `paper run` calls.
+6. A test reads the `Dockerfile` and `.dockerignore` and checks the required lines in D
+   (entrypoint, `--no-dev`, non-root user, `data/` and `.env*` ignored).
 
 ## Out of scope
 
-- Running PAPER on real data, scheduling (Task Scheduler), notifications.
-- Any change to strategies, risk, execution, broker adapters or configuration.
+- Creating anything in Google Cloud, `gcloud` commands, Terraform, CI deploy jobs.
+- Changes to strategies, risk, execution, broker adapters, configuration values or the replay
+  logic of `run_paper`.
+- Notifications (alerts come from Cloud Logging in document 15 §5).
 
 ## Acceptance criteria
 
-1. On the Windows operator PC: all `AGENTS.md` checks green; `uv run pytest` 0 failures.
-2. Coverage on Linux CI stays 100% where it is 100% today.
+1. All `AGENTS.md` checks green on the operator PC (Windows); CI green on Linux and Windows.
+2. Coverage of the new package and command at 100% (branch coverage as configured), overall
+   gate unchanged.
 3. The fixture backtest double run is byte-identical.
-4. `git diff --stat` in LAST_REPORT shows no protected path and no change under
-   `src/aitrader/broker/`, `src/aitrader/risk/`, `src/aitrader/execution/` or `config/`.
-
-## Review round 1 (2026-10-26, Codex GitHub review of 15f17d2)
-
-Finding (valid): in `atomic_write`, when `write`/`flush` fails (for example ENOSPC), the new
-`file.close()` retries the flush and can raise again, so `temporary.unlink()` never runs and a
-temporary file is left (a regression on POSIX).
-
-Required change:
-- Keep close-before-unlink ordering, but make the unlink run even if `close()` raises
-  (`try: file.close() finally: temporary.unlink(missing_ok=True)`, or equivalent). The original
-  exception from write/flush/fsync is the one that propagates; an error from `close()` during
-  cleanup must not replace it (attach it as context at most).
-- Test: simulate a failing `flush` whose subsequent `close` also raises (monkeypatch the file
-  object or `NamedTemporaryFile`), and assert the original error propagates, the target still
-  holds the old content and no temporary file remains. Must pass on Windows and Linux.
-- Coverage stays 100% for `aitrader.app`.
+4. `git diff --stat` in LAST_REPORT shows no protected path, no change under
+   `src/aitrader/broker/`, `src/aitrader/risk/`, `src/aitrader/execution/` or `config/`, and no
+   change to `uv.lock` dependencies.
+5. LAST_REPORT lists any command whose behaviour differs between Windows and Linux.
