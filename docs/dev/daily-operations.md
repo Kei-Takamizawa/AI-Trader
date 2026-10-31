@@ -27,7 +27,8 @@ job is enabled: two writers would make different books (section 6).
 
 ## 2. Daily check (about 2 minutes)
 
-Who: the owner, or Claude when a read-only report key is set up (section 7). When: after
+Who: Claude each run day through the read-only report key (section 7); the owner when that
+report is missing or flags a problem. When: after
 08:15 JST on Tuesday to Saturday.
 
 Open Cloud Shell in the console of project `aitrader-paper` (free; works in a phone browser) and
@@ -116,7 +117,7 @@ The Windows `data/` copy is frozen at the 2026-10-30 session. Before any local r
 3. After the fallback, decide with the designer which copy becomes the state of record before
    resuming the scheduler. The cloud archive is never overwritten from the PC by hand.
 
-## 7. Daily report by Claude (only if the owner chooses it)
+## 7. Daily report by Claude (owner decision 2026-10-31)
 
 The project's cloud Claude sessions have no Google Cloud credentials. For Claude to check and
 report each morning, the owner creates a read-only account that can read **only**
@@ -137,8 +138,8 @@ settings as the environment variable `AITRADER_GCP_READER_KEY`, and deletes the 
 (`shred -u ~/reader-key.json`). The key is never pasted into a chat, a prompt, a file in the
 repository or CI. Without list permission the reader fetches only the known object names above.
 
-This deviates from document 15 §6 ("no key is created") for this one read-only account; the owner's
-choice is recorded in the PR that adds it. Revoke it at any time with
+This deviates from document 15 §6 ("no key is created") for this one read-only account; the owner
+chose it on 2026-10-31 (option A in the project thread, recorded in PR #17). Revoke it at any time with
 `gcloud iam service-accounts keys list/delete --iam-account=$SA`; rotate it every 90 days.
 
 The report is the table of section 2 for both books, in Japanese, posted to the project once per

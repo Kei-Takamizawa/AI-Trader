@@ -129,6 +129,10 @@ the operator PC.
   never pass through Claude, Codex, a chat, the repository or CI. Free tier: 6 active versions and
   10,000 accesses per month [V]; we use 2 versions and ≈ 50 accesses.
 - Webull keys of any kind are not placed in this project. PAPER uses SimBroker.
+- **Exception (owner decision 2026-10-31):** one read-only service account `aitrader-reader`
+  with a key, limited by an IAM condition to `reports/` in the state bucket, so that cloud Claude
+  sessions can report the daily result (`docs/dev/daily-operations.md` §7). It cannot read the
+  state archive, market data or secrets.
 - **Rule change (approved by the owner 2026-10-26):** the data key lives on the operator PC and in
   Secret Manager of project `aitrader-paper`. `CLAUDE.md` is updated accordingly.
 
