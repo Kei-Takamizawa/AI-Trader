@@ -31,7 +31,8 @@ in this build.
 | S3 research | S3 and S3-R1 on real data (N = 25) | done: `docs/research/2026-10-24-s3-results.md`; neither passes (S3 fails only the deflated Sharpe, 0.58 < 0.80) |
 | TASK-015 | S3 as a PAPER observation book next to S1 (owner decision 2026-10-24; not a candidate) | done (Codex cycle 8, PR #12); both books start after the first closed session on or after 2026-10-26 |
 | TASK-016 | Windows operator PC: file lock, atomic write, test portability, Windows CI job | done (Codex cycle 9, PR #13, review round 1) |
-| TASK-017 | `aitrader paper daily` (fetch + both books in one job), Cloud Storage state archive with generation precondition, Dockerfile (document 15) | done (Codex cycle 10, PR #14, review round 1); nothing deployed yet |
+| TASK-017 | `aitrader paper daily` (fetch + both books in one job), Cloud Storage state archive with generation precondition, Dockerfile (document 15) | done (Codex cycle 10, PR #14, review round 1) |
+| TASK-018 | Anchor the root entries of `.gcloudignore` (the upload dropped `src/aitrader/data`) | done (Codex cycle 11, PR #15) |
 
 All of the above up to TASK-010 is on `main`: pull request
 [Kei-Takamizawa/AI-Trader#1](https://github.com/Kei-Takamizawa/AI-Trader/pull/1) was merged on
@@ -94,9 +95,15 @@ as the reference strategy, and research S1 1.1 in parallel.
    the Google Cloud project `aitrader-paper` (asked at that time).
    Approved 2026-10-26 (owner wants the daily run on Google Cloud soon, free only):
    `docs/design/15-cloud-paper-free-tier.md`, a Cloud Run job + Cloud Scheduler in
-   `aitrader-paper`, including the data key in Secret Manager. TASK-017 is done. Next: the owner
-   creates the billing account, project and secrets; then the designer writes the set-up
-   runbook and the operator creates the resources after a separate approval (document 15 §8).
+   `aitrader-paper`, including the data key in Secret Manager. TASK-017 and TASK-018 are done.
+   Deployed 2026-10-26 with the runbook `docs/dev/cloud-run.md`: job `aitrader-paper-daily`
+   (us-east1), Cloud Scheduler Tuesday to Saturday 08:00 JST, state in
+   `gs://aitrader-paper-state`. The owner set the error e-mail alert and the JPY 100 Cloud Run
+   spend cap. The 5-day shadow run (2026-10-27 to 2026-10-31 JST) matched the Windows runner
+   exactly (equity, positions, sessions, intents). Cut-over 2026-10-31 (owner decision): the
+   cloud job is the only scheduled runner; the Windows task "AI-Trader PAPER daily" is disabled,
+   not deleted, as a manual fallback, and the Windows `data/` copy is frozen at the 2026-10-30
+   session. Before any manual fallback run, restore `data/` from the cloud state archive first.
 
 ## Open items
 
