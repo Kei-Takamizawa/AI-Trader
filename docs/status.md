@@ -104,6 +104,8 @@ as the reference strategy, and research S1 1.1 in parallel.
    cloud job is the only scheduled runner; the Windows task "AI-Trader PAPER daily" is disabled,
    not deleted, as a manual fallback, and the Windows `data/` copy is frozen at the 2026-10-30
    session. Before any manual fallback run, restore `data/` from the cloud state archive first.
+   Day-to-day operation (daily check, exit codes, re-runs, fallback, weekly and monthly checks):
+   `docs/dev/daily-operations.md` (2026-10-31).
 
 ## Open items
 
