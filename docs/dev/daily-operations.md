@@ -133,7 +133,8 @@ gcloud storage buckets add-iam-policy-binding gs://$B --member="serviceAccount:$
 gcloud iam service-accounts keys create ~/reader-key.json --iam-account=$SA
 ```
 
-Then the owner pastes the content of `~/reader-key.json` into the project's cloud environment
+Then the owner pastes the one-line `base64 -w0 ~/reader-key.json` output (environment variables
+are single lines) into the project's cloud environment
 settings as the environment variable `AITRADER_GCP_READER_KEY`, and deletes the file
 (`shred -u ~/reader-key.json`). The key is never pasted into a chat, a prompt, a file in the
 repository or CI. Without list permission the reader fetches only the known object names above.
