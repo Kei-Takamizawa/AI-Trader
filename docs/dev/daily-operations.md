@@ -143,8 +143,15 @@ This deviates from document 15 §6 ("no key is created") for this one read-only 
 chose it on 2026-10-31 (option A in the project thread, recorded in PR #17). Revoke it at any time with
 `gcloud iam service-accounts keys list/delete --iam-account=$SA`; rotate it every 90 days.
 
-The report is the table of section 2 for both books, in Japanese, posted to the project once per
-run day. A failed check (stale `as_of`, `HALTED`, `data_stale`, missing file) is reported as an
+Done on 2026-10-31: the operator created the account and the key on the owner's PC with the
+owner's approval (key ID `6b34f6fb…672b`, next rotation by 2027-01-29); a test read both status
+files and was refused (403) on `state/paper-state.tar.gz`. The owner stored the key.
+
+`scripts/paper_check.sh` performs the check: it decodes the key into a temporary gcloud
+configuration (removed on exit), activates it and prints the main fields of both status files.
+
+The report is the table of section 2 for both books, in Japanese, posted to the project at
+08:23 JST on Tuesday to Saturday. A failed check (stale `as_of`, `HALTED`, `data_stale`, missing file) is reported as an
 action item with the matching row of section 3.
 
 ## 8. Weekly and monthly
