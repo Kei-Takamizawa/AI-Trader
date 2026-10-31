@@ -138,6 +138,11 @@ For 5 trading days the Windows task and the cloud job both run. Each day the des
 `data/paper*/status/latest.json`: equity, positions, last session and session count must match.
 Cut-over (disabling the Windows task, keeping it for manual fallback) needs the owner's approval.
 
+## Daily operations
+
+After cut-over, day-to-day checks, exit codes, re-runs and fallback are in
+`docs/dev/daily-operations.md`.
+
 ## Not in this runbook
 
 No VM, external IP, NAT, load balancer or other region. Anything not listed here needs the
