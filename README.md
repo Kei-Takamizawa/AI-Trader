@@ -2,7 +2,7 @@
 
 A personal, fully automated trading system for US stocks and ETFs, designed to run unattended in the cloud while its owner sleeps in Japan.
 
-> **Current status: design stage.** No trading code exists yet. The system has never traded, and it will trade only simulated (virtual) money until the owner explicitly approves real-money trading.
+> **Status: ended on 2026-11-06.** The owner stopped the project and decided that a broad index fund is the better investment. The system only ever traded virtual money (PAPER) and never real money. The code and research stay here as a record; see [the closing record](docs/closing-record.md).
 
 ## What it will do
 
