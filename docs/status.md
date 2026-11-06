@@ -1,6 +1,10 @@
 # Project status
 
-Last updated 2026-10-26 by Claude (designer). Read this first in a new session, then
+> **The project ended on 2026-11-06 (owner decision).** The repository is frozen. See
+> [`closing-record.md`](closing-record.md) for why, the final PAPER results and the shut-down
+> steps. The rest of this page describes the state just before the end.
+
+Last updated 2026-11-06 by Claude (designer). Read this first in a new session, then
 `CLAUDE.md` and `docs/design/README.md`.
 
 ## Where the project stands
